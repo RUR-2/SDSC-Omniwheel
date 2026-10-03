@@ -1,0 +1,17 @@
+# Tester104: Manual Control + Social Avoidance
+# Python dependencies
+
+# Core dependencies
+ultralytics>=8.0.0      # YOLO for human detection
+opencv-python>=4.5.0    # Computer vision
+numpy>=1.19.0           # Numerical operations
+
+# Controller support (optional but recommended)
+pygame>=2.0.0           # Xbox controller input
+
+# ROS2 integration (install via apt, not pip)
+# sudo apt install ros-humble-cv-bridge
+# sudo apt install python3-opencv
+
+# Camera support (install via apt)
+# sudo apt install ros-humble-usb-cam

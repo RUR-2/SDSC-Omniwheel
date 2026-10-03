@@ -1,0 +1,214 @@
+# ══════════════════════════════════════════════════════════════════
+# Social Navigation System Configuration
+# ══════════════════════════════════════════════════════════════════
+# Edit parameter ini untuk tuning behavior robot
+# Setelah edit, restart nodes: bash start_social_nav.sh
+# ══════════════════════════════════════════════════════════════════
+
+# ── Camera & Detection ────────────────────────────────────────────
+detection:
+  # YOLO model
+  model_path: "yolo11n.pt"
+  confidence_threshold: 0.5        # 0.0-1.0, higher = fewer false positives
+  
+  # Camera resolution
+  width: 640
+  height: 480
+  fps: 30
+  
+  # Detection rate
+  publish_rate_hz: 10              # Hz, detection frequency
+  
+  # Tracking
+  tracking_threshold_pixels: 50    # Max pixel distance for same person
+  tracking_timeout_seconds: 2.0    # Forget person after N seconds
+  
+  # Distance filtering
+  min_distance_m: 0.1              # Ignore closer than this
+  max_distance_m: 10.0             # Ignore farther than this
+  
+  # Visualization
+  show_window: true                # Show detection window (set false for headless)
+
+
+# ── Social Force Model ────────────────────────────────────────────
+sfm:
+  # Basic parameters
+  desired_velocity: 0.25           # m/s, normal walking speed
+  relaxation_time: 0.5             # s, time to reach desired velocity
+  effective_mass: 5.0              # kg, robot effective mass
+  
+  # Human repulsion force
+  repulsion_magnitude: 5.0         # N, strength of repulsion (A parameter)
+  repulsion_range: 0.8             # m, characteristic distance (B parameter)
+  
+  # Speed limits
+  max_linear_velocity: 0.3         # m/s, absolute max speed
+  max_angular_velocity: 0.6        # rad/s, max rotation speed
+  max_speed: 0.6                   # m/s, max resultant speed from SFM
+  
+  # Control loop
+  control_rate_hz: 20              # Hz, controller frequency
+
+
+# ── Proxemic Zones (Edward T. Hall 1966) ──────────────────────────
+proxemics:
+  # Zone distances
+  intimate_radius: 0.45            # m, emergency stop zone
+  personal_radius: 1.20            # m, slow down zone
+  social_radius: 3.60              # m, active avoidance zone
+  
+  # Zone behaviors
+  intimate_speed_scale: 0.0        # 0.0 = stop
+  personal_speed_scale: 0.3        # 0.3 = 30% of speed
+  social_speed_scale: 1.0          # 1.0 = full speed with avoidance
+
+
+# ── Navigation ─────────────────────────────────────────────────────
+navigation:
+  # Goal mode
+  use_waypoint_nav: false          # true = internal waypoint, false = external goals
+  
+  # Default waypoint (if use_waypoint_nav = true)
+  default_goal_x: 2.0              # m
+  default_goal_y: 0.0              # m
+  
+  # Goal tolerance
+  waypoint_tolerance: 0.3          # m, distance to consider goal reached
+
+
+# ── Robot Hardware ─────────────────────────────────────────────────
+robot:
+  # Serial port
+  serial_port: "/dev/ttyUSB0"
+  serial_baud: 115200
+  
+  # Mecanum kinematics
+  wheel_radius: 0.055              # m
+  max_wheel_velocity: 20.0         # rad/s
+  
+  # Velocity smoothing
+  velocity_ema_alpha: 0.25         # 0.0-1.0, lower = smoother
+  
+  # Safety
+  cmd_vel_timeout: 0.5             # s, stop if no command received
+  
+  # Battery (3S LiPo)
+  battery_voltage_min: 11.0        # V
+  battery_voltage_max: 12.6        # V
+  battery_capacity_ah: 5.2         # Ah
+
+
+# ── Behavior Presets ───────────────────────────────────────────────
+# Uncomment salah satu preset di bawah untuk quick tuning
+
+# PRESET: Conservative (keep distance, play it safe)
+# sfm.repulsion_magnitude: 8.0
+# sfm.repulsion_range: 1.2
+# proxemics.intimate_radius: 0.60
+# proxemics.personal_radius: 1.50
+
+# PRESET: Aggressive (close approach, faster)
+# sfm.repulsion_magnitude: 3.0
+# sfm.repulsion_range: 0.5
+# proxemics.intimate_radius: 0.30
+# proxemics.personal_radius: 0.90
+# sfm.desired_velocity: 0.35
+
+# PRESET: Crowded environment (many people)
+# sfm.repulsion_magnitude: 6.0
+# sfm.repulsion_range: 1.0
+# proxemics.social_radius: 4.5
+# sfm.max_linear_velocity: 0.2
+
+# PRESET: Testing (slow and cautious)
+# sfm.desired_velocity: 0.15
+# sfm.max_linear_velocity: 0.2
+# proxemics.intimate_radius: 0.70
+# detection.publish_rate_hz: 5
+
+
+# ── Advanced Tuning ────────────────────────────────────────────────
+advanced:
+  # Force calculation
+  use_predictive_sfm: false        # TODO: use human velocity for prediction
+  lateral_nudge_gain: 0.02         # m/s, symmetry breaking for head-on
+  
+  # Position estimation (without odometry)
+  use_dead_reckoning: true         # Estimate position from cmd_vel
+  position_reset_on_goal: true     # Reset position when goal reached
+  
+  # Logging
+  log_level: "INFO"                # DEBUG, INFO, WARN, ERROR
+  log_forces: false                # Log force vectors (verbose)
+  save_trajectory: false           # TODO: save trajectory to CSV
+  
+  # Debug visualization (RViz)
+  publish_markers: false           # TODO: publish visualization markers
+
+
+# ══════════════════════════════════════════════════════════════════
+# Notes:
+# ══════════════════════════════════════════════════════════════════
+#
+# 1. REPULSION_MAGNITUDE (A):
+#    - Higher = stronger push away from humans
+#    - Too high = jerky motion, oscillations
+#    - Too low = robot gets too close
+#    - Recommended: 3-8 N
+#
+# 2. REPULSION_RANGE (B):
+#    - Higher = repulsion felt from farther away
+#    - Too high = robot avoids even distant people
+#    - Too low = late reaction, sudden stops
+#    - Recommended: 0.5-1.2 m
+#
+# 3. INTIMATE_RADIUS:
+#    - Critical safety parameter
+#    - Should be > robot physical radius (typically 0.3m)
+#    - Add safety margin: 0.45m recommended
+#    - Consider human personal space comfort
+#
+# 4. CONTROL_RATE:
+#    - Higher = smoother control, more CPU
+#    - Lower = choppy motion, less CPU
+#    - 20 Hz is good balance
+#    - Detection can be slower (10 Hz) since humans move slowly
+#
+# 5. DESIRED_VELOCITY:
+#    - Match to human walking speed (~0.25 m/s) for natural interaction
+#    - Can be higher in open spaces (up to 0.5 m/s)
+#    - Lower in crowded areas (down to 0.15 m/s)
+#
+# ══════════════════════════════════════════════════════════════════
+# Troubleshooting:
+# ══════════════════════════════════════════════════════════════════
+#
+# Problem: Robot oscillates/jerky near humans
+#   → Reduce repulsion_magnitude
+#   → Increase velocity_ema_alpha (more smoothing)
+#
+# Problem: Robot gets too close to humans
+#   → Increase repulsion_magnitude
+#   → Increase intimate_radius
+#   → Increase repulsion_range
+#
+# Problem: Robot avoids humans too early
+#   → Reduce repulsion_range
+#   → Reduce social_radius
+#
+# Problem: Robot stops unnecessarily
+#   → Check detection false positives
+#   → Increase confidence_threshold
+#   → Reduce intimate_radius (carefully!)
+#
+# Problem: Robot doesn't reach goal
+#   → Check if SFM forces balance out (local minimum)
+#   → Increase desired_velocity
+#   → Reduce repulsion_magnitude
+#   → Add lateral nudge (advanced.lateral_nudge_gain)
+#
+# ══════════════════════════════════════════════════════════════════
+
+# Version: 1.0
+# Last updated: 2024-12-31
