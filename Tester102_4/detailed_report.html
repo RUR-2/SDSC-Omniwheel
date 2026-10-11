@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detailed Social Navigation Analysis - Critical Approach Scenario</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .warning-banner {
+            background: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 20px;
+            margin: 20px 30px;
+            border-radius: 5px;
+        }
+        
+        .warning-banner h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        
+        .warning-banner ul {
+            margin-left: 20px;
+            color: #856404;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .stat-card h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #e74c3c;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .unit {
+            font-size: 0.9em;
+            color: #999;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin: 10px 5px;
+        }
+        
+        .status-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .plot-section {
+            padding: 30px;
+        }
+        
+        .plot-container {
+            margin-bottom: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .plot-title {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 2px solid #e74c3c;
+        }
+        
+        .plot-title h2 {
+            color: #333;
+            font-size: 1.3em;
+        }
+        
+        .plot-title p {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .zone-legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 20px 30px;
+        }
+        
+        .zone-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .zone-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #333;
+        }
+        
+        .footer {
+            background: #333;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .analysis-box {
+            background: #e8f4f8;
+            border-left: 5px solid #17a2b8;
+            padding: 20px;
+            margin: 20px 30px;
+            border-radius: 5px;
+        }
+        
+        .analysis-box h3 {
+            color: #0c5460;
+            margin-bottom: 10px;
+        }
+        
+        .analysis-box p {
+            color: #0c5460;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⚠️ Critical Approach Scenario Analysis</h1>
+            <p>Detailed Social Navigation Test - INTIMATE Zone Entry</p>
+            <div class="status-badge status-danger">🔴 INTIMATE ZONE VIOLATIONS DETECTED</div>
+            <div class="status-badge status-warning">⚠️ SAFETY REVIEW REQUIRED</div>
+        </div>
+        
+        <!-- Warning Banner -->
+        <div class="warning-banner">
+            <h3>⚠️ CRITICAL FINDINGS:</h3>
+            <ul>
+                <li><strong>INTIMATE Zone Violations:</strong> 2 instances (Samples #8, #9)</li>
+                <li><strong>Minimum Distance:</strong> 0.42m (below 0.45m safety threshold)</li>
+                <li><strong>Force Magnitude Peak:</strong> 11.91 N (extremely high repulsion)</li>
+                <li><strong>Robot Response:</strong> STOP command activated at 0.42m</li>
+            </ul>
+        </div>
+        
+        <!-- Statistics Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>📍 Total Samples</h3>
+                <div class="value">9</div>
+                <div class="unit">data points</div>
+            </div>
+            <div class="stat-card">
+                <h3>⏱️ Duration</h3>
+                <div class="value">2.00</div>
+                <div class="unit">seconds</div>
+            </div>
+            <div class="stat-card">
+                <h3>📏 Distance Traveled</h3>
+                <div class="value">1.33</div>
+                <div class="unit">meters</div>
+            </div>
+            <div class="stat-card">
+                <h3>🚀 Avg Speed</h3>
+                <div class="value">0.67</div>
+                <div class="unit">m/s</div>
+            </div>
+            <div class="stat-card">
+                <h3>🔴 Min Distance</h3>
+                <div class="value">0.42</div>
+                <div class="unit">meters (CRITICAL)</div>
+            </div>
+            <div class="stat-card">
+                <h3>⚡ Max Force</h3>
+                <div class="value">11.91</div>
+                <div class="unit">Newtons</div>
+            </div>
+        </div>
+        
+        <!-- Zone Legend -->
+        <div class="zone-legend">
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ff4444;"></div>
+                <span><strong>INTIMATE</strong> (&lt;0.45m): 22.2% - 2 violations</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ff8c00;"></div>
+                <span><strong>PERSONAL</strong> (0.45-1.2m): 22.2%</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ffd700;"></div>
+                <span><strong>SOCIAL</strong> (1.2-3.6m): 44.4%</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #32cd32;"></div>
+                <span><strong>PUBLIC</strong> (&gt;3.6m): 11.1%</span>
+            </div>
+        </div>
+        
+        <!-- Analysis Box -->
+        <div class="analysis-box">
+            <h3>📊 Scenario Summary:</h3>
+            <p>
+                This test demonstrates a <strong>critical approach scenario</strong> where the robot encounters 
+                a stationary human positioned directly in its path (X=0, Y decreasing from 3.6m to 1.2m). 
+                The robot successfully detects the obstacle at 3.6m (PUBLIC zone), initiates lateral evasion 
+                maneuvers at 2.05m (SOCIAL zone), and applies aggressive avoidance at 1.09m (PERSONAL zone). 
+                However, the robot <strong>enters the INTIMATE zone twice</strong> (0.42m and 0.43m) before 
+                achieving safe lateral clearance (X=0.43m). The STOP command was correctly activated, but 
+                the approach was too close for comfort.
+            </p>
+        </div>
+        
+        <!-- Plot Section -->
+        <div class="plot-section">
+            <!-- Trajectory Plot -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>🗺️ Robot-Human Spatial Interaction</h2>
+                    <p>Complete trajectory showing approach, evasion, and zone violations</p>
+                </div>
+                <div id="plot-trajectory"></div>
+            </div>
+            
+            <!-- Distance Over Time -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>📏 Distance Evolution</h2>
+                    <p>Robot-human distance with zone boundaries - Critical zone entry visible</p>
+                </div>
+                <div id="plot-distance"></div>
+            </div>
+            
+            <!-- Speed and Force -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>🚀⚡ Speed & Force Response</h2>
+                    <p>Robot speed reduction and SFM force buildup correlation</p>
+                </div>
+                <div id="plot-speed-force"></div>
+            </div>
+            
+            <!-- Force Vectors -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>⚡ SFM Force Vector Field</h2>
+                    <p>Repulsion forces directing robot away from human</p>
+                </div>
+                <div id="plot-force-vectors"></div>
+            </div>
+            
+            <!-- Lateral Deviation -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>↔️ Lateral Deviation Analysis</h2>
+                    <p>X-position deviation showing evasion maneuver effectiveness</p>
+                </div>
+                <div id="plot-lateral"></div>
+            </div>
+            
+            <!-- Zone Timeline -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>🔵 Zone Transition Timeline</h2>
+                    <p>Proxemic zone changes over time</p>
+                </div>
+                <div id="plot-zones"></div>
+            </div>
+            
+            <!-- Data Table -->
+            <div class="plot-container">
+                <div class="plot-title">
+                    <h2>📋 Detailed Sample Data</h2>
+                    <p>Complete measurements for all 9 samples</p>
+                </div>
+                <div id="data-table" style="padding: 20px; overflow-x: auto;"></div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>Brone Social Nav Team</strong> | Critical Scenario Analysis | 2026-10-06</p>
+            <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                ⚠️ This scenario demonstrates INTIMATE zone violations - Review required
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Detailed sample data
+        const data = [
+            {sample: 1, time: 0.00, humanX: 0.00, humanY: 3.60, robotX: 0.00, robotY: 0.00, distance: 3.60, zone: 'PUBLIC', forceX: 0.42, forceY: -0.25, speed: 1.00, command: 'FORWARD'},
+            {sample: 2, time: 0.25, humanX: 0.00, humanY: 3.30, robotX: 0.00, robotY: 0.24, distance: 3.06, zone: 'SOCIAL', forceX: 0.72, forceY: -0.43, speed: 0.94, command: 'FORWARD'},
+            {sample: 3, time: 0.50, humanX: 0.00, humanY: 3.00, robotX: 0.01, robotY: 0.45, distance: 2.55, zone: 'SOCIAL', forceX: 1.21, forceY: -0.71, speed: 0.88, command: 'FORWARD'},
+            {sample: 4, time: 0.75, humanX: 0.00, humanY: 2.70, robotX: 0.03, robotY: 0.65, distance: 2.05, zone: 'SOCIAL', forceX: 2.00, forceY: -1.18, speed: 0.82, command: 'FORWARD'},
+            {sample: 5, time: 1.00, humanX: 0.00, humanY: 2.40, robotX: 0.06, robotY: 0.84, distance: 1.56, zone: 'SOCIAL', forceX: 3.26, forceY: -1.92, speed: 0.76, command: 'FWD-RIGHT'},
+            {sample: 6, time: 1.25, humanX: 0.00, humanY: 2.10, robotX: 0.10, robotY: 1.02, distance: 1.09, zone: 'PERSONAL', forceX: 5.22, forceY: -3.06, speed: 0.68, command: 'FWD-RIGHT'},
+            {sample: 7, time: 1.50, humanX: 0.00, humanY: 1.80, robotX: 0.18, robotY: 1.14, distance: 0.69, zone: 'PERSONAL', forceX: 7.87, forceY: -4.47, speed: 0.55, command: 'FWD-RIGHT'},
+            {sample: 8, time: 1.75, humanX: 0.00, humanY: 1.50, robotX: 0.29, robotY: 1.20, distance: 0.42, zone: 'INTIMATE', forceX: 8.14, forceY: -8.62, speed: 0.38, command: 'STOP'},
+            {sample: 9, time: 2.00, humanX: 0.00, humanY: 1.20, robotX: 0.43, robotY: 1.17, distance: 0.43, zone: 'INTIMATE', forceX: 11.74, forceY: -0.71, speed: 0.41, command: 'STOP'}
+        ];
+        
+        // Zone colors
+        const zoneColors = {
+            'INTIMATE': '#ff4444',
+            'PERSONAL': '#ff8c00',
+            'SOCIAL': '#ffd700',
+            'PUBLIC': '#32cd32'
+        };
+        
+        function getZoneColor(zone) {
+            return zoneColors[zone] || '#999';
+        }
+        
+        // Calculate force magnitudes
+        const forceMagnitudes = data.map(d => Math.sqrt(d.forceX * d.forceX + d.forceY * d.forceY));
+        
+        // 1. Trajectory Plot
+        const trajectoryTraces = [];
+        
+        // Connection lines
+        data.forEach((d, i) => {
+            trajectoryTraces.push({
+                x: [d.robotX, d.humanX],
+                y: [d.robotY, d.humanY],
+                mode: 'lines',
+                line: {
+                    color: getZoneColor(d.zone),
+                    width: 4,
+                    dash: i >= 7 ? 'solid' : 'dot'  // Solid for INTIMATE violations
+                },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        });
+        
+        // Robot path
+        trajectoryTraces.push({
+            x: data.map(d => d.robotX),
+            y: data.map(d => d.robotY),
+            mode: 'lines+markers+text',
+            name: 'Robot Path',
+            line: {color: '#667eea', width: 4},
+            marker: {
+                size: 18,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            text: data.map(d => d.sample),
+            textposition: 'top center',
+            textfont: {size: 12, color: '#000', family: 'Arial Black'},
+            hovertext: data.map(d => `Sample ${d.sample}<br>Robot: (${d.robotX.toFixed(2)}, ${d.robotY.toFixed(2)})<br>Zone: ${d.zone}<br>Distance: ${d.distance.toFixed(2)}m`),
+            hoverinfo: 'text'
+        });
+        
+        // Human path
+        trajectoryTraces.push({
+            x: data.map(d => d.humanX),
+            y: data.map(d => d.humanY),
+            mode: 'lines+markers+text',
+            name: 'Human (Stationary)',
+            line: {color: '#ff4444', width: 3, dash: 'dash'},
+            marker: {
+                size: 25,
+                symbol: 'star',
+                color: '#ff4444',
+                line: {color: '#fff', width: 3}
+            },
+            text: data.map(() => '👤'),
+            textfont: {size: 20},
+            textposition: 'middle center',
+            hovertext: data.map((d, i) => `Human Position ${i+1}<br>(${d.humanX.toFixed(2)}, ${d.humanY.toFixed(2)})`),
+            hoverinfo: 'text'
+        });
+        
+        // Zone circles
+        function createCircle(x, y, r) {
+            const points = 100;
+            const xc = [], yc = [];
+            for (let i = 0; i <= points; i++) {
+                const theta = (i / points) * 2 * Math.PI;
+                xc.push(x + r * Math.cos(theta));
+                yc.push(y + r * Math.sin(theta));
+            }
+            return {x: xc, y: yc};
+        }
+        
+        const humanFinal = {x: data[data.length-1].humanX, y: data[data.length-1].humanY};
+        const circles = [
+            {...createCircle(humanFinal.x, humanFinal.y, 0.45), name: 'Intimate (0.45m)', line: {color: '#ff4444', dash: 'dash', width: 3}},
+            {...createCircle(humanFinal.x, humanFinal.y, 1.20), name: 'Personal (1.20m)', line: {color: '#ff8c00', dash: 'dash', width: 2}},
+            {...createCircle(humanFinal.x, humanFinal.y, 3.60), name: 'Social (3.60m)', line: {color: '#ffd700', dash: 'dash', width: 1}}
+        ];
+        
+        circles.forEach(c => {
+            trajectoryTraces.push({...c, mode: 'lines', type: 'scatter', showlegend: true});
+        });
+        
+        Plotly.newPlot('plot-trajectory', trajectoryTraces, {
+            xaxis: {title: 'X Position (m) - Right →', range: [-0.5, 1.5], zeroline: true, gridcolor: '#eee'},
+            yaxis: {title: 'Y Position (m) - Forward ↑', range: [-0.2, 4], scaleanchor: 'x', zeroline: true, gridcolor: '#eee'},
+            hovermode: 'closest',
+            height: 700,
+            plot_bgcolor: '#fafafa'
+        });
+        
+        // 2. Distance Over Time
+        Plotly.newPlot('plot-distance', [
+            {
+                x: data.map(d => d.time),
+                y: data.map(d => d.distance),
+                mode: 'lines+markers',
+                name: 'Distance',
+                line: {color: '#667eea', width: 4},
+                marker: {
+                    size: 15,
+                    color: data.map(d => getZoneColor(d.zone)),
+                    line: {color: '#000', width: 2}
+                }
+            },
+            {x: [0, 2.5], y: [0.45, 0.45], mode: 'lines', name: 'INTIMATE (0.45m)', line: {color: '#ff4444', dash: 'dash', width: 3}},
+            {x: [0, 2.5], y: [1.20, 1.20], mode: 'lines', name: 'PERSONAL (1.20m)', line: {color: '#ff8c00', dash: 'dash', width: 2}},
+            {x: [0, 2.5], y: [3.60, 3.60], mode: 'lines', name: 'SOCIAL (3.60m)', line: {color: '#ffd700', dash: 'dash', width: 2}}
+        ], {
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'Distance (m)', range: [0, 4]},
+            hovermode: 'closest',
+            height: 400,
+            shapes: [
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 0, y1: 0.45, fillcolor: '#ff4444', opacity: 0.1, line: {width: 0}},
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 0.45, y1: 1.20, fillcolor: '#ff8c00', opacity: 0.1, line: {width: 0}},
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 1.20, y1: 3.60, fillcolor: '#ffd700', opacity: 0.1, line: {width: 0}}
+            ]
+        });
+        
+        // 3. Speed and Force
+        Plotly.newPlot('plot-speed-force', [
+            {
+                x: data.map(d => d.time),
+                y: data.map(d => d.speed),
+                mode: 'lines+markers',
+                name: 'Speed (m/s)',
+                yaxis: 'y',
+                line: {color: '#667eea', width: 3},
+                marker: {size: 12}
+            },
+            {
+                x: data.map(d => d.time),
+                y: forceMagnitudes,
+                mode: 'lines+markers',
+                name: 'Force Magnitude (N)',
+                yaxis: 'y2',
+                line: {color: '#e74c3c', width: 3},
+                marker: {size: 12}
+            }
+        ], {
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'Speed (m/s)', side: 'left'},
+            yaxis2: {title: 'Force (N)', side: 'right', overlaying: 'y'},
+            hovermode: 'x unified',
+            height: 400
+        });
+        
+        // 4. Force Vectors
+        const forceVectorTraces = [
+            {
+                x: data.map(d => d.robotX),
+                y: data.map(d => d.robotY),
+                mode: 'lines+markers',
+                line: {color: '#667eea', width: 3},
+                marker: {size: 12},
+                name: 'Robot Path'
+            },
+            {
+                x: data.map(d => d.humanX),
+                y: data.map(d => d.humanY),
+                mode: 'markers+text',
+                marker: {size: 25, symbol: 'star', color: '#ff4444', line: {color: '#fff', width: 3}},
+                text: data.map(() => '👤'),
+                textfont: {size: 20},
+                textposition: 'middle center',
+                name: 'Human'
+            }
+        ];
+        
+        const forceArrows = data.map(d => {
+            const mag = Math.sqrt(d.forceX * d.forceX + d.forceY * d.forceY);
+            const scale = 0.15;
+            return {
+                x: d.robotX + d.forceX * scale,
+                y: d.robotY + d.forceY * scale,
+                ax: d.robotX,
+                ay: d.robotY,
+                xref: 'x', yref: 'y',
+                axref: 'x', ayref: 'y',
+                showarrow: true,
+                arrowhead: 2,
+                arrowsize: 1.5,
+                arrowwidth: 3,
+                arrowcolor: mag > 8 ? '#ff0000' : (mag > 4 ? '#ff8c00' : '#32cd32')
+            };
+        });
+        
+        Plotly.newPlot('plot-force-vectors', forceVectorTraces, {
+            xaxis: {title: 'X Position (m)', range: [-0.5, 1.5]},
+            yaxis: {title: 'Y Position (m)', range: [-0.2, 4], scaleanchor: 'x'},
+            annotations: forceArrows,
+            height: 600
+        });
+        
+        // 5. Lateral Deviation
+        Plotly.newPlot('plot-lateral', [{
+            x: data.map(d => d.time),
+            y: data.map(d => d.robotX),
+            mode: 'lines+markers',
+            name: 'X Position',
+            line: {color: '#667eea', width: 4},
+            marker: {
+                size: 15,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(102, 126, 234, 0.2)'
+        }], {
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'X Position (m) - Lateral Deviation', range: [-0.1, 0.5]},
+            hovermode: 'closest',
+            height: 400,
+            annotations: [{
+                x: 1.75,
+                y: 0.29,
+                text: 'Max Deviation: 0.43m',
+                showarrow: true,
+                arrowhead: 2,
+                ax: -50,
+                ay: -40
+            }]
+        });
+        
+        // 6. Zone Timeline
+        const zoneMap = {'PUBLIC': 0, 'SOCIAL': 1, 'PERSONAL': 2, 'INTIMATE': 3};
+        
+        Plotly.newPlot('plot-zones', [{
+            x: data.map(d => d.time),
+            y: data.map(d => zoneMap[d.zone]),
+            mode: 'lines+markers',
+            name: 'Zone',
+            line: {color: '#667eea', width: 4, shape: 'hv'},
+            marker: {
+                size: 20,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            }
+        }], {
+            xaxis: {title: 'Time (s)'},
+            yaxis: {
+                title: 'Proxemic Zone',
+                ticktext: ['PUBLIC', 'SOCIAL', 'PERSONAL', 'INTIMATE'],
+                tickvals: [0, 1, 2, 3],
+                range: [-0.5, 3.5]
+            },
+            hovermode: 'closest',
+            height: 400,
+            shapes: [
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 2.5, y1: 3.5, fillcolor: '#ff4444', opacity: 0.2, line: {width: 0}},
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 1.5, y1: 2.5, fillcolor: '#ff8c00', opacity: 0.2, line: {width: 0}},
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: 0.5, y1: 1.5, fillcolor: '#ffd700', opacity: 0.2, line: {width: 0}},
+                {type: 'rect', xref: 'paper', x0: 0, x1: 1, y0: -0.5, y1: 0.5, fillcolor: '#32cd32', opacity: 0.2, line: {width: 0}}
+            ]
+        });
+        
+        // 7. Data Table
+        let tableHTML = '<table style="width:100%; border-collapse: collapse; font-size: 0.9em;">';
+        tableHTML += '<thead><tr style="background: #e74c3c; color: white;">';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">#</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Time (s)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Human (X,Y)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Robot (X,Y)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Distance (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Zone</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Force (N)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Speed (m/s)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Command</th>';
+        tableHTML += '</tr></thead><tbody>';
+        
+        data.forEach((d, i) => {
+            const bgColor = d.zone === 'INTIMATE' ? '#ffe6e6' : (i % 2 === 0 ? '#f8f9fa' : 'white');
+            const bold = d.zone === 'INTIMATE' ? 'font-weight: bold;' : '';
+            const mag = forceMagnitudes[i];
+            
+            tableHTML += `<tr style="background: ${bgColor}; ${bold}">`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.sample}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.time.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">(${d.humanX.toFixed(2)}, ${d.humanY.toFixed(2)})</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">(${d.robotX.toFixed(2)}, ${d.robotY.toFixed(2)})</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.distance.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: ${getZoneColor(d.zone)}; color: white; font-weight: bold;">${d.zone}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${mag.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.speed.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.command}</td>`;
+            tableHTML += '</tr>';
+        });
+        
+        tableHTML += '</tbody></table>';
+        document.getElementById('data-table').innerHTML = tableHTML;
+    </script>
+</body>
+</html>

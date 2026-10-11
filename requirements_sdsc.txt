@@ -1,0 +1,18 @@
+# Requirements untuk Bluetooth SDSC Controller
+# Install dengan: pip install -r requirements_sdsc.txt
+
+# Core libraries
+pygame>=2.5.0              # Joystick control
+pyserial>=3.5              # Bluetooth/Serial communication
+
+# Computer Vision & AI
+opencv-python>=4.8.0       # OpenCV untuk image processing
+ultralytics>=8.0.0         # YOLOv11 untuk human detection
+torch>=2.0.0              # PyTorch (backend untuk YOLO)
+torchvision>=0.15.0       # Torchvision
+
+# Intel RealSense
+pyrealsense2>=2.54.0      # Intel RealSense SDK untuk depth camera
+
+# Utilities
+numpy>=1.24.0             # Numerical computing

@@ -1,0 +1,182 @@
+# ══════════════════════════════════════════════════════════════════
+# Bluetooth SDSC Controller Configuration
+# ══════════════════════════════════════════════════════════════════
+# Edit file ini untuk tuning behavior tanpa edit code
+# Load dengan: yaml.safe_load(open('config_sdsc.yaml'))
+# ══════════════════════════════════════════════════════════════════
+
+# ── Bluetooth / Serial ────────────────────────────────────────────
+bluetooth:
+  baud_rate: 115200
+  port: "/dev/rfcomm0"              # Default port
+  send_period_ms: 50                # 20 Hz control rate
+  timeout_ms: 50
+  write_timeout_ms: 200
+
+# ── Joystick Mapping ──────────────────────────────────────────────
+joystick:
+  # Axis mapping (check GUI untuk actual numbers)
+  axis_x: 0                         # Left stick horizontal
+  axis_y: 1                         # Left stick vertical
+  
+  # Button mapping
+  button_rotate_left: 6             # CCW rotation
+  button_rotate_right: 7            # CW rotation
+  button_deadman: 4                 # Hold to enable motion
+  
+  # Control parameters
+  require_deadman: true             # Require B4 to move
+  speed_scale: 0.5                  # 0.0-1.0, velocity scaling
+  rotation_scale: 0.5               # 0.0-1.0, rotation scaling
+  stick_deadzone: 0.12              # Ignore small drift
+  
+  # Inversion flags
+  invert_forward: false
+  invert_lateral: false
+  invert_rotation: false
+
+# ── Social Force Model ────────────────────────────────────────────
+social_force:
+  # Basic SFM parameters
+  repulsion_magnitude: 5.0          # A (Newtons)
+  repulsion_range: 0.8              # B (meters)
+  robot_mass: 5.0                   # kg
+  relaxation_time: 0.5              # τ (seconds)
+  
+  # Speed limits (not used in current implementation)
+  max_linear_velocity: 0.3          # m/s
+  max_angular_velocity: 0.6         # rad/s
+  max_speed: 0.6                    # m/s
+
+# ── Proxemic Zones (Edward T. Hall) ───────────────────────────────
+proxemics:
+  # Zone boundaries (meters)
+  intimate_radius: 0.45             # Emergency stop zone
+  personal_radius: 1.20             # Slow down zone
+  social_radius: 3.60               # Avoidance zone
+  
+  # Speed scaling per zone
+  intimate_speed_scale: 0.0         # 0% = full stop
+  personal_speed_scale: 0.3         # 30% speed
+  social_speed_scale: 0.7           # 70% speed
+
+# ── Camera & Detection ────────────────────────────────────────────
+camera:
+  # RealSense configuration
+  width: 640
+  height: 480
+  fps: 30
+  
+  # Enable streams
+  enable_depth: true
+  enable_color: true
+  enable_infrared: false
+
+detection:
+  # YOLO model
+  model_path: "yolo11n.pt"          # YOLOv11 nano
+  confidence_threshold: 0.5         # 0.0-1.0
+  
+  # Detection rate
+  rate_hz: 10                       # Detection frequency
+  
+  # Distance filtering
+  min_distance_m: 0.1               # Ignore closer than
+  max_distance_m: 10.0              # Ignore farther than
+
+# ── Tracking ──────────────────────────────────────────────────────
+tracking:
+  threshold_pixels: 50              # Max distance for same person
+  timeout_seconds: 2.0              # Forget after N seconds
+
+# ── Visualization ─────────────────────────────────────────────────
+visualization:
+  show_detection_window: true       # OpenCV window
+  show_force_vectors: true          # Draw force arrows
+  show_zone_circles: true           # Draw proxemic zones
+  show_tracking_ids: true           # Show person IDs
+  show_distances: true              # Show distance text
+
+# ── Behavior Presets ──────────────────────────────────────────────
+# Uncomment salah satu preset untuk quick tuning
+
+presets:
+  # Conservative: Keep distance, play it safe
+  conservative:
+    social_force:
+      repulsion_magnitude: 8.0
+      repulsion_range: 1.2
+    proxemics:
+      intimate_radius: 0.60
+      personal_radius: 1.50
+  
+  # Aggressive: Close approach, faster
+  aggressive:
+    social_force:
+      repulsion_magnitude: 3.0
+      repulsion_range: 0.5
+    proxemics:
+      intimate_radius: 0.30
+      personal_radius: 0.90
+    joystick:
+      speed_scale: 0.7
+  
+  # Crowded: Many people
+  crowded:
+    social_force:
+      repulsion_magnitude: 6.0
+      repulsion_range: 1.0
+    proxemics:
+      social_radius: 4.5
+    joystick:
+      speed_scale: 0.3
+  
+  # Testing: Slow and cautious
+  testing:
+    social_force:
+      repulsion_magnitude: 5.0
+      repulsion_range: 0.8
+    proxemics:
+      intimate_radius: 0.70
+    joystick:
+      speed_scale: 0.3
+    detection:
+      rate_hz: 5
+
+# Active preset (uncomment to enable)
+# active_preset: null                 # null = use main config
+# active_preset: conservative
+# active_preset: aggressive
+# active_preset: crowded
+# active_preset: testing
+
+# ══════════════════════════════════════════════════════════════════
+# Tuning Notes
+# ══════════════════════════════════════════════════════════════════
+#
+# REPULSION_MAGNITUDE (A):
+#   Higher = stronger push away
+#   Too high = jerky, oscillations
+#   Too low = robot gets too close
+#   Range: 3-8 N
+#
+# REPULSION_RANGE (B):
+#   Higher = felt from farther away
+#   Too high = avoids even distant people
+#   Too low = late reaction
+#   Range: 0.5-1.2 m
+#
+# INTIMATE_RADIUS:
+#   Should be > robot radius (typically 0.3m)
+#   Add safety margin
+#   Consider human comfort
+#
+# SPEED_SCALE:
+#   Lower = safer, more control
+#   Higher = faster, more aggressive
+#   Range: 0.2-0.8
+#
+# ══════════════════════════════════════════════════════════════════
+
+# Version: 2.0
+# Last updated: 2024-12-31

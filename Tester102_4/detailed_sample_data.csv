@@ -1,0 +1,10 @@
+Sample,Time_s,Human_X_m,Human_Y_m,Robot_X_m,Robot_Y_m,Distance_m,Zone,Force_X_N,Force_Y_N,Speed_ms,Command,Description
+1,0.00,0.00,3.60,0.00,0.00,3.60,PUBLIC,0.42,-0.25,1.00,FORWARD,Mulai terdeteksi
+2,0.25,0.00,3.30,0.00,0.24,3.06,SOCIAL,0.72,-0.43,0.94,FORWARD,Mulai berbelok halus
+3,0.50,0.00,3.00,0.01,0.45,2.55,SOCIAL,1.21,-0.71,0.88,FORWARD,Deviasi lateral awal
+4,0.75,0.00,2.70,0.03,0.65,2.05,SOCIAL,2.00,-1.18,0.82,FORWARD,Akselerasi ke kanan
+5,1.00,0.00,2.40,0.06,0.84,1.56,SOCIAL,3.26,-1.92,0.76,FWD-RIGHT,Gaya dorong meningkat
+6,1.25,0.00,2.10,0.10,1.02,1.09,PERSONAL,5.22,-3.06,0.68,FWD-RIGHT,Evasi lateral agresif
+7,1.50,0.00,1.80,0.18,1.14,0.69,PERSONAL,7.87,-4.47,0.55,FWD-RIGHT,Deviasi makin lebar
+8,1.75,0.00,1.50,0.29,1.20,0.42,INTIMATE,8.14,-8.62,0.38,STOP,Mengunci lintasan samping
+9,2.00,0.00,1.20,0.43,1.17,0.43,INTIMATE,11.74,-0.71,0.41,STOP,Membuang posisi ke X=0.43m

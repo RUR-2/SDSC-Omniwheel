@@ -1,0 +1,121 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║           TESTER102_3 - QUICK REFERENCE (v3.0)                       ║
+║         Manual Sampling Camera-Based Avoidance Tester                ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ CONTROLS                                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  [SPACE]  Take sample (manual sampling every 0.25s)                 │
+│  [R]      Reset trajectory and statistics                           │
+│  [S]      Save data to CSV file                                     │
+│  [Q]      Quit and show trajectory plot                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ WORKFLOW                                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  1. Run: python3 manual_camera_movement_tester.py                   │
+│  2. Wait for camera initialization                                  │
+│  3. Move camera physically (manual)                                 │
+│  4. Press SPACE to take sample every 0.25s                          │
+│  5. Repeat steps 3-4                                                │
+│  6. Optional: Press S to save CSV                                   │
+│  7. Press Q to quit and view trajectory                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ DISPLAY INFO                                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  • Cyan arrow    → Target direction (goal/forward)                  │
+│  • Green arrow   → Command direction (avoidance adjusted)           │
+│  • Magenta arrow → Force vectors (from humans)                      │
+│  • Displacement  → X/Y movement for 0.25s                           │
+│                    (X+ = right, Y+ = forward)                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ SAMPLE OUTPUT EXAMPLE                                                │
+├─────────────────────────────────────────────────────────────────────┤
+│ 📍 SAMPLE #5 at t=1.25s                                             │
+│ ─────────────────────────────────────────────────────────────────── │
+│ Position: (0.234, 0.678) m                                          │
+│ Velocity: (0.158, 0.579) m/s                                        │
+│ Speed: 0.600 m/s | Zone: SOCIAL                                     │
+│ Humans: 1 | Closest: 2.35m                                          │
+│ SFM Force: (2.15, 3.78) N                                           │
+│ Command: ↖ FWD-LEFT                                                 │
+│ Displacement (0.25s): +0.040X  +0.145Y                              │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ DISPLACEMENT COORDINATES                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  X+ = Right (kanan)      │  Y+ = Forward (depan)                    │
+│  X- = Left (kiri)        │  Y- = Backward (belakang)                │
+│                                                                      │
+│  Examples:                                                           │
+│    +0.040X +0.145Y  →  Move right-forward                           │
+│    -0.030X +0.100Y  →  Move left-forward                            │
+│    +0.000X -0.050Y  →  Move backward                                │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ PROXEMIC ZONES                                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│  INTIMATE  < 0.45m   →  STOP (0.0 m/s)        [RED]                │
+│  PERSONAL  < 1.20m   →  SLOW (0.3 m/s)        [ORANGE]             │
+│  SOCIAL    < 3.60m   →  MODERATE (0.6 m/s)    [YELLOW]             │
+│  PUBLIC    ≥ 3.60m   →  FULL SPEED (1.0 m/s)  [GREEN]              │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ OUTPUT FILES                                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  CSV:  trajectory_YYYYMMDD_HHMMSS.csv                               │
+│        • Contains all sample data                                   │
+│        • 18 columns including position, velocity, forces            │
+│                                                                      │
+│  PLOT: trajectory_plot_YYYYMMDD_HHMMSS.png                          │
+│        • Left: Camera trajectory map with zones                     │
+│        • Right: Time-series (speed, force, humans)                  │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ CONFIGURATION                                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  SAMPLE_INTERVAL = 0.25s    (1/4 second per sample)                │
+│  BASE_SPEED      = 1.0 m/s  (maximum speed)                         │
+│  SFM_A           = 5.0 N    (repulsive force magnitude)             │
+│  SFM_B           = 0.8 m    (repulsive force range)                 │
+│  SFM_WEIGHT      = 0.3      (avoidance vs goal weight)              │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ QUICK TIPS                                                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  ✓ Sample consistently every ~0.25s for best results               │
+│  ✓ Move camera smoothly, avoid jerky movements                     │
+│  ✓ Wait for camera to stabilize before sampling                    │
+│  ✓ Collect minimum 10 samples for analysis                         │
+│  ✓ Save CSV periodically if running long tests                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING                                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│  Issue: No plot shown when quit                                     │
+│  Fix:   Press SPACE at least once to collect samples                │
+│                                                                      │
+│  Issue: Position not accumulating                                   │
+│  Fix:   Ensure velocity is not zero (move camera or detect humans)  │
+│                                                                      │
+│  Issue: CSV file not saved                                          │
+│  Fix:   Check folder exists and is writable                         │
+└─────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════╗
+║ Version: 3.0 (Manual Sampling Integration)                           ║
+║ Author: Brone Social Nav Team                                        ║
+║ Date: 2026-10-04                                                     ║
+╚══════════════════════════════════════════════════════════════════════╝

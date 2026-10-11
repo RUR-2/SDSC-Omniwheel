@@ -1,0 +1,299 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║   🎥 CAMERA-BASED AVOIDANCE COMMAND - QUICK START GUIDE 🎥     ║
+║              Version 2.0 - Automatic Avoidance                  ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📝 TUJUAN:
+   Program ini menguji algoritma MENGHINDAR robot dengan kamera yang
+   DIGESER SECARA FISIK oleh user. Robot mendeteksi manusia dan
+   menghitung PERINTAH ARAH MENGHINDAR secara otomatis.
+   
+   ⚠️  PENTING: User TIDAK perlu menggerakkan kamera sesuai perintah!
+              User hanya MEMBACA output perintah yang ditampilkan.
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 CONCEPT:
+
+┌─────────────────────────────────────────────────────────────┐
+│  STEP 1: User geser kamera FISIK menuju target (~1 m/s)    │
+│           ↓                                                 │
+│  STEP 2: Robot deteksi manusia (RealSense + YOLO)          │
+│           ↓                                                 │
+│  STEP 3: Robot hitung arah menghindar (SFM algorithm)      │
+│           ↓                                                 │
+│  STEP 4: Tampilkan PERINTAH GERAK (1 detik)                │
+│           • Direction arrow (↑↗→↘↓↙←↖)                      │
+│           • X-axis: +/- m/s (← left / right →)             │
+│           • Y-axis: +/- m/s (↓ back / forward ↑)           │
+│           ↓                                                 │
+│  STEP 5: User BACA output (TIDAK perlu ikuti perintah)     │
+└─────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+
+✅ KEY FEATURES:
+
+1. Automatic Avoidance Direction
+   ✓ Robot menghitung arah menghindar OTOMATIS
+   ✓ Kombinasi: target direction + avoidance (SFM)
+   ✓ NO keyboard control
+
+2. Proxemic Zone Speed Adjustment
+   • INTIMATE (<0.45m)   → 0.0 m/s  (STOP!)
+   • PERSONAL (0.45-1.2m) → 0.3 m/s  (SLOW)
+   • SOCIAL (1.2-3.6m)    → 0.6 m/s  (MODERATE)
+   • PUBLIC (>3.6m)       → 1.0 m/s  (FULL SPEED)
+
+3. Real-time Output (every 1 second)
+   ✓ Movement command direction
+   ✓ X-axis component (horizontal)
+   ✓ Y-axis component (vertical/forward)
+   ✓ Speed (proxemic adjusted)
+   ✓ Avoidance force magnitude
+
+4. Visual Display
+   • Cyan arrow    - Target direction (goal)
+   • Green arrow   - Command direction (avoidance)
+   • Magenta arrow - Force vectors
+   • Zone circles  - Proxemic zones
+   • Human boxes   - Detection with zone color
+
+═══════════════════════════════════════════════════════════════════
+
+🚀 QUICK START:
+
+1. Install:
+   pip3 install pyrealsense2 ultralytics opencv-python numpy
+
+2. Download YOLO model (yolo11n.pt) ke folder ini
+
+3. Run:
+   python3 manual_camera_movement_tester.py
+
+4. GESER KAMERA secara fisik menuju target
+   (kecepatan ~1 m/s, arah: forward)
+
+5. BACA output perintah di layar dan terminal
+
+═══════════════════════════════════════════════════════════════════
+
+🎮 CONTROLS:
+
+  [R] - Reset statistics
+  [Q] - Quit
+
+═══════════════════════════════════════════════════════════════════
+
+📊 READING OUTPUT:
+
+Terminal Output (every 1 second):
+┌────────────────────────────────────────────────────────────┐
+│ ⏱️  Time: 5.2s                                             │
+│ 🎯 Target: Forward | Avoidance: -15.3°                    │
+│ 📊 Zone: SOCIAL | Speed: 0.600 m/s                        │
+│ 🤖 MOVEMENT COMMAND (1s): ↖ FWD-LEFT                      │
+│    ├─ X-axis: -0.158 m/s  (← left / right →)             │
+│    └─ Y-axis: +0.579 m/s  (↓ back / forward ↑)           │
+│ 👥 Humans detected: 1                                     │
+│ ⚠️  Closest: 2.35m                                         │
+│ 💨 Avoidance force: 4.23 N                                │
+└────────────────────────────────────────────────────────────┘
+
+INTERPRETATION:
+  ✓ Target: Forward (straight ahead - goal)
+  ✓ Avoidance: -15.3° (slight left deviation)
+  ✓ Human at 2.35m (SOCIAL zone)
+  ✓ Speed: 0.6 m/s (60% karena SOCIAL zone)
+  ✓ COMMAND: Gerak FWD-LEFT (maju sambil sedikit ke kiri)
+  ✓ X-axis: -0.158 m/s (bergerak ke KIRI)
+  ✓ Y-axis: +0.579 m/s (bergerak MAJU)
+  ✓ Robot MENGHINDAR manusia dengan gerak lateral!
+
+═══════════════════════════════════════════════════════════════════
+
+📺 VISUAL DISPLAY:
+
+Screen Shows:
+  🔵 Blue circle      - Camera/Robot position
+  ───► Cyan arrow     - TARGET direction (goal/forward)
+  ═══► Green arrow    - COMMAND direction (avoidance output)
+  ~~~► Magenta arrow  - FORCE vectors (from humans)
+  
+  🟢 Green box    - Human in PUBLIC zone (>3.6m)
+  🟡 Yellow box   - Human in SOCIAL zone (1.2-3.6m)
+  🟠 Orange box   - Human in PERSONAL zone (0.45-1.2m)
+  🔴 Red box      - Human in INTIMATE zone (<0.45m) - DANGER!
+
+═══════════════════════════════════════════════════════════════════
+
+🧪 TEST SCENARIOS:
+
+Test 1: No Humans
+  Setup:   Tidak ada manusia di depan
+  Expected: Command = Target (straight forward)
+            Speed = 1.0 m/s (full speed)
+            X-axis ≈ 0, Y-axis = +1.0
+
+Test 2: Human on Right
+  Setup:   1 manusia di sisi kanan (2m)
+  Expected: Command deviates LEFT (menghindar)
+            X-axis negative (ke kiri)
+            Y-axis positive (tetap maju)
+            Arrow: ↖ FWD-LEFT
+
+Test 3: Human Dead Ahead
+  Setup:   1 manusia tepat di depan (1.5m)
+  Expected: Strong lateral avoidance (left or right)
+            Force magnitude HIGH
+            Speed reduced (SOCIAL zone)
+
+Test 4: Multiple Humans
+  Setup:   2+ manusia di posisi berbeda
+  Expected: Command menghindar dari yang TERDEKAT
+            Resultant force dari semua manusia
+            Direction optimal untuk avoid semua
+
+Test 5: Close Approach
+  Setup:   Manusia mendekat <0.45m
+  Expected: Speed → 0.0 m/s (STOP!)
+            Zone → RED (INTIMATE)
+            Command: ⊙ STOP
+
+═══════════════════════════════════════════════════════════════════
+
+🔍 COORDINATE SYSTEM:
+
+        Y+ (Forward/Maju)
+         ↑
+         │
+         │
+   X- ←──●──→ X+
+ (Kiri)  │  (Kanan)
+         │
+         ↓
+       Y- (Backward/Mundur)
+
+X-axis (horizontal):
+  • Negative (-) = KIRI
+  • Positive (+) = KANAN
+
+Y-axis (vertical/depth):
+  • Positive (+) = MAJU/DEPAN
+  • Negative (-) = MUNDUR/BELAKANG
+
+Examples:
+  X=0.0,  Y=+1.0  → Pure forward
+  X=+1.0, Y=0.0   → Pure right
+  X=-0.5, Y=+0.5  → Forward-left diagonal
+
+═══════════════════════════════════════════════════════════════════
+
+⚙️ PARAMETER TUNING:
+
+Edit di manual_camera_movement_tester.py:
+
+# Proxemic zones (meters)
+R_INTIMATE = 0.45      # Emergency zone
+R_PERSONAL = 1.20      # Slow zone  
+R_SOCIAL = 3.60        # Caution zone
+
+# Speed parameters (m/s)
+SPEED_INTIMATE = 0.0   # Stop
+SPEED_PERSONAL = 0.3   # 30% speed
+SPEED_SOCIAL = 0.6     # 60% speed
+SPEED_PUBLIC = 1.0     # 100% speed
+
+# SFM parameters
+SFM_A = 5.0            # Force magnitude
+SFM_B = 0.8            # Force range
+SFM_WEIGHT = 0.3       # Avoidance vs goal balance
+
+═══════════════════════════════════════════════════════════════════
+
+🔧 TROUBLESHOOTING:
+
+Problem: Camera not detected
+Fix: Check USB 3.0, run: rs-enumerate-devices
+
+Problem: No humans detected
+Fix: Improve lighting, stand 1-5m from camera
+
+Problem: Command = Target (no avoidance)
+Fix: Check humans are detected (bounding boxes visible)
+     Adjust SFM_WEIGHT (higher = more avoidance)
+
+Problem: Too much avoidance
+Fix: Reduce SFM_WEIGHT or SFM_A
+
+Problem: Speed not adjusting
+Fix: Verify proxemic zone thresholds
+     Check distance readings
+
+═══════════════════════════════════════════════════════════════════
+
+📚 COMPARISON:
+
+┌──────────────┬─────────────┬──────────────────┐
+│ Feature      │ Tester102   │ Tester102_3 (v2) │
+├──────────────┼─────────────┼──────────────────┤
+│ Control      │ None        │ Manual (camera)  │
+│ Avoidance    │ Force only  │ Direction calc   │
+│ Output       │ Forces      │ Commands (X/Y)   │
+│ Target       │ None        │ Forward (goal)   │
+│ Use Case     │ View react  │ Test navigation  │
+└──────────────┴─────────────┴──────────────────┘
+
+Tester102:   Lihat REAKSI robot (force visualization)
+Tester102_3: Test NAVIGASI dengan avoidance commands
+
+═══════════════════════════════════════════════════════════════════
+
+✅ VALIDATION CHECKLIST:
+
+Pre-Test:
+[  ] Camera connected (USB 3.0)
+[  ] YOLO model downloaded (yolo11n.pt)
+[  ] Dependencies installed
+[  ] Test space prepared (3-5m)
+
+Running:
+[  ] Program starts without errors
+[  ] Camera feed visible
+[  ] Humans detected (colored boxes)
+[  ] Commands displayed every 1 second
+[  ] Arrows visible (cyan, green, magenta)
+
+Validation:
+[  ] No humans → Command = straight forward
+[  ] Human right → Command deviates left
+[  ] Human left → Command deviates right
+[  ] Human ahead → Strong lateral avoidance
+[  ] Close (<0.45m) → Speed = 0 (STOP)
+
+Ready:
+[  ] Behavior matches expectation
+[  ] Avoidance direction correct
+[  ] Speed adjustment smooth
+[  ] Ready for robot integration!
+
+═══════════════════════════════════════════════════════════════════
+
+📞 SUPPORT:
+
+Related Files:
+  • manual_camera_movement_tester.py - Main program
+  • README.md - Full documentation
+  • INTEGRATION_SUMMARY.md - Technical details
+  • Tester102/sfm_realtime_viewer.py - Force visualization
+
+═══════════════════════════════════════════════════════════════════
+
+Version: 2.0 - Automatic Avoidance
+Created: 2024-12-31
+Hardware: Intel RealSense D435/D455
+Algorithm: Social Force Model (SFM)
+
+Happy Testing! 🎥🤖🚀

@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Navigation Analysis - Tester102_4</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .stat-card h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .unit {
+            font-size: 0.9em;
+            color: #999;
+        }
+        
+        .plot-section {
+            padding: 30px;
+        }
+        
+        .plot-container {
+            margin-bottom: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .plot-title {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .plot-title h2 {
+            color: #333;
+            font-size: 1.3em;
+        }
+        
+        .plot-title p {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin: 10px 0;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .zone-legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 20px 30px;
+        }
+        
+        .zone-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .zone-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #333;
+        }
+        
+        .footer {
+            background: #333;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .tab-container {
+            padding: 0 30px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: #f8f9fa;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            color: #666;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            background: #e9ecef;
+        }
+        
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📊 Social Navigation Analysis</h1>
+            <p>Tester102_4 - Manual Camera Movement Test Results</p>
+            <div class="status-badge status-success">✅ SYSTEM VALIDATED</div>
+        </div>
+        
+        <!-- Statistics Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>📍 Total Samples</h3>
+                <div class="value">9</div>
+                <div class="unit">data points</div>
+            </div>
+            <div class="stat-card">
+                <h3>⏱️ Duration</h3>
+                <div class="value">775.98</div>
+                <div class="unit">seconds (~13 min)</div>
+            </div>
+            <div class="stat-card">
+                <h3>📏 Distance</h3>
+                <div class="value">1.284</div>
+                <div class="unit">meters</div>
+            </div>
+            <div class="stat-card">
+                <h3>🚀 Avg Speed</h3>
+                <div class="value">0.656</div>
+                <div class="unit">m/s</div>
+            </div>
+            <div class="stat-card">
+                <h3>👥 Detection Rate</h3>
+                <div class="value">88.9%</div>
+                <div class="unit">8/9 samples</div>
+            </div>
+            <div class="stat-card">
+                <h3>🎯 Closest Approach</h3>
+                <div class="value">0.87</div>
+                <div class="unit">meters (SAFE)</div>
+            </div>
+        </div>
+        
+        <!-- Zone Legend -->
+        <div class="zone-legend">
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ff4444;"></div>
+                <span><strong>INTIMATE</strong> (&lt;0.45m): 0%</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ff8c00;"></div>
+                <span><strong>PERSONAL</strong> (0.45-1.2m): 33.3%</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #ffd700;"></div>
+                <span><strong>SOCIAL</strong> (1.2-3.6m): 44.4%</span>
+            </div>
+            <div class="zone-item">
+                <div class="zone-color" style="background: #32cd32;"></div>
+                <span><strong>PUBLIC</strong> (&gt;3.6m): 22.2%</span>
+            </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tab-container">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('overview')">📊 Overview</button>
+                <button class="tab" onclick="showTab('trajectory')">🗺️ Trajectory</button>
+                <button class="tab" onclick="showTab('analysis')">📈 Analysis</button>
+                <button class="tab" onclick="showTab('data')">📋 Data Table</button>
+            </div>
+        </div>
+        
+        <!-- Plot Section -->
+        <div class="plot-section">
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content active">
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>🗺️ Robot Trajectory Map</h2>
+                        <p>2D path showing robot movement colored by proxemic zones</p>
+                    </div>
+                    <div id="plot-trajectory"></div>
+                </div>
+                
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>🚀 Speed Over Time</h2>
+                        <p>Speed adjustment based on proxemic zones</p>
+                    </div>
+                    <div id="plot-speed"></div>
+                </div>
+                
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>👥 Robot-Human Interaction Map</h2>
+                        <p>Detailed view of robot and human positions with distance lines</p>
+                    </div>
+                    <div id="plot-interaction"></div>
+                </div>
+            </div>
+            
+            <!-- Trajectory Tab -->
+            <div id="trajectory" class="tab-content">
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>🎯 Velocity Vector Field</h2>
+                        <p>Movement direction and magnitude</p>
+                    </div>
+                    <div id="plot-velocity"></div>
+                </div>
+                
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>⚡ Force Vector Field</h2>
+                        <p>Social Force Model repulsion forces</p>
+                    </div>
+                    <div id="plot-forces"></div>
+                </div>
+            </div>
+            
+            <!-- Analysis Tab -->
+            <div id="analysis" class="tab-content">
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>👥 Proximity to Humans</h2>
+                        <p>Distance to closest human with zone boundaries</p>
+                    </div>
+                    <div id="plot-proximity"></div>
+                </div>
+                
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>⚡ SFM Force Magnitude</h2>
+                        <p>Social force intensity over time</p>
+                    </div>
+                    <div id="plot-force-mag"></div>
+                </div>
+                
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>🔵 Zone Distribution</h2>
+                        <p>Time spent in each proxemic zone</p>
+                    </div>
+                    <div id="plot-zones"></div>
+                </div>
+            </div>
+            
+            <!-- Data Tab -->
+            <div id="data" class="tab-content">
+                <div class="plot-container">
+                    <div class="plot-title">
+                        <h2>📋 Sample Data Table</h2>
+                        <p>Raw data from CSV file</p>
+                    </div>
+                    <div id="data-table" style="padding: 20px; overflow-x: auto;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>Brone Social Nav Team</strong> | Generated: 2026-10-06 | Tester102_4</p>
+            <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                Interactive HTML Report - No Python Required
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Sample data from CSV
+        const data = [
+            {sample: 1, time: 228.57, posX: -0.054, posY: 0.244, velX: -0.217, velY: 0.976, speed: 1.000, zone: 'PUBLIC', humans: 1, closest: 3.71, forceX: -0.01, forceY: -0.05, command: 'FORWARD'},
+            {sample: 2, time: 370.74, posX: -0.033, posY: 0.393, velX: 0.083, velY: 0.594, speed: 0.600, zone: 'SOCIAL', humans: 1, closest: 3.07, forceX: 0.02, forceY: -0.11, command: 'FORWARD'},
+            {sample: 3, time: 545.18, posX: -0.012, posY: 0.541, velX: 0.086, velY: 0.594, speed: 0.600, zone: 'SOCIAL', humans: 1, closest: 2.58, forceX: 0.04, forceY: -0.19, command: 'FORWARD'},
+            {sample: 4, time: 733.19, posX: 0.052, posY: 0.677, velX: 0.254, velY: 0.544, speed: 0.600, zone: 'SOCIAL', humans: 1, closest: 1.65, forceX: 0.52, forceY: -0.35, command: 'FWD-RIGHT'},
+            {sample: 5, time: 893.01, posX: 0.115, posY: 0.813, velX: 0.254, velY: 0.543, speed: 0.600, zone: 'SOCIAL', humans: 1, closest: 1.27, forceX: 0.86, forceY: -0.57, command: 'FWD-RIGHT'},
+            {sample: 6, time: 923.40, posX: 0.147, posY: 0.881, velX: 0.127, velY: 0.272, speed: 0.300, zone: 'PERSONAL', humans: 1, closest: 0.87, forceX: 1.63, forceY: -0.47, command: 'FWD-RIGHT'},
+            {sample: 7, time: 938.01, posX: 0.179, posY: 0.949, velX: 0.126, velY: 0.272, speed: 0.300, zone: 'PERSONAL', humans: 1, closest: 0.94, forceX: 1.49, forceY: -0.38, command: 'FWD-RIGHT'},
+            {sample: 8, time: 960.55, posX: 0.210, posY: 1.017, velX: 0.126, velY: 0.272, speed: 0.300, zone: 'PERSONAL', humans: 1, closest: 0.92, forceX: 1.54, forceY: -0.33, command: 'FWD-RIGHT'},
+            {sample: 9, time: 1004.55, posX: 0.210, posY: 1.267, velX: 0.000, velY: 1.000, speed: 1.000, zone: 'PUBLIC', humans: 0, closest: Infinity, forceX: 0.00, forceY: 0.00, command: 'FORWARD'}
+        ];
+        
+        // Zone colors
+        const zoneColors = {
+            'INTIMATE': '#ff4444',
+            'PERSONAL': '#ff8c00',
+            'SOCIAL': '#ffd700',
+            'PUBLIC': '#32cd32'
+        };
+        
+        // Helper function
+        function getZoneColor(zone) {
+            return zoneColors[zone] || '#999';
+        }
+        
+        // Calculate human positions from robot position and force direction
+        function estimateHumanPosition(robot, force, distance) {
+            if (distance === Infinity || (force.x === 0 && force.y === 0)) {
+                return null;
+            }
+            // Force points away from human, so human is in opposite direction
+            const forceMag = Math.sqrt(force.x * force.x + force.y * force.y);
+            if (forceMag === 0) return null;
+            
+            // Normalize force direction and reverse it
+            const dirX = -force.x / forceMag;
+            const dirY = -force.y / forceMag;
+            
+            // Human position = robot position + direction * distance
+            return {
+                x: robot.x + dirX * distance,
+                y: robot.y + dirY * distance
+            };
+        }
+        
+        // Calculate human positions for all samples
+        const humanPositions = data.map(d => 
+            estimateHumanPosition(
+                {x: d.posX, y: d.posY},
+                {x: d.forceX, y: d.forceY},
+                d.closest
+            )
+        ).filter(h => h !== null);
+        
+        // 1. Trajectory Plot
+        const trajectoryTrace = {
+            x: data.map(d => d.posX),
+            y: data.map(d => d.posY),
+            mode: 'lines+markers',
+            type: 'scatter',
+            name: 'Robot Path',
+            line: {color: '#667eea', width: 3},
+            marker: {
+                size: 15,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            text: data.map(d => `Sample ${d.sample}<br>Zone: ${d.zone}<br>Speed: ${d.speed} m/s<br>Distance: ${d.closest.toFixed(2)}m`),
+            hoverinfo: 'text'
+        };
+        
+        // Add zone circles
+        function createCircle(x, y, r) {
+            const theta = [];
+            const xc = [];
+            const yc = [];
+            for (let i = 0; i <= 100; i++) {
+                const t = (i / 100) * 2 * Math.PI;
+                theta.push(t);
+                xc.push(x + r * Math.cos(t));
+                yc.push(y + r * Math.sin(t));
+            }
+            return {x: xc, y: yc};
+        }
+        
+        // Human positions trace
+        const humanTrace = {
+            x: humanPositions.map(h => h.x),
+            y: humanPositions.map(h => h.y),
+            mode: 'markers',
+            type: 'scatter',
+            name: 'Human Positions',
+            marker: {
+                size: 20,
+                symbol: 'star',
+                color: '#ff4444',
+                line: {color: '#ffffff', width: 2}
+            },
+            text: humanPositions.map((h, i) => `Human at Sample ${i+1}<br>Position: (${h.x.toFixed(2)}, ${h.y.toFixed(2)})`),
+            hoverinfo: 'text'
+        };
+        
+        // Lines connecting robot to human
+        const connectionLines = [];
+        data.forEach((d, i) => {
+            if (humanPositions[i]) {
+                connectionLines.push({
+                    x: [d.posX, humanPositions[i].x],
+                    y: [d.posY, humanPositions[i].y],
+                    mode: 'lines',
+                    type: 'scatter',
+                    showlegend: false,
+                    line: {
+                        color: getZoneColor(d.zone),
+                        width: 1,
+                        dash: 'dot'
+                    },
+                    hoverinfo: 'skip'
+                });
+            }
+        });
+        
+        const lastPos = data[data.length - 1];
+        const circles = [
+            {...createCircle(lastPos.posX, lastPos.posY, 0.45), name: 'Intimate (0.45m)', line: {color: '#ff4444', dash: 'dash', width: 2}},
+            {...createCircle(lastPos.posX, lastPos.posY, 1.20), name: 'Personal (1.20m)', line: {color: '#ff8c00', dash: 'dash', width: 2}},
+            {...createCircle(lastPos.posX, lastPos.posY, 3.60), name: 'Social (3.60m)', line: {color: '#ffd700', dash: 'dash', width: 1}}
+        ];
+        
+        Plotly.newPlot('plot-trajectory', [
+            ...connectionLines,
+            trajectoryTrace,
+            humanTrace,
+            ...circles.map(c => ({...c, mode: 'lines', type: 'scatter', showlegend: true}))
+        ], {
+            title: '',
+            xaxis: {title: 'X Position (m) - Right →'},
+            yaxis: {title: 'Y Position (m) - Forward ↑', scaleanchor: 'x'},
+            hovermode: 'closest',
+            height: 500
+        });
+        
+        // 2. Speed Over Time
+        const speedTrace = {
+            x: data.map(d => d.time),
+            y: data.map(d => d.speed),
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Speed',
+            line: {color: '#667eea', width: 3},
+            marker: {
+                size: 12,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(102, 126, 234, 0.2)'
+        };
+        
+        Plotly.newPlot('plot-speed', [speedTrace], {
+            title: '',
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'Speed (m/s)', range: [0, 1.2]},
+            hovermode: 'closest',
+            height: 400
+        });
+        
+        // 2b. Robot-Human Interaction Map
+        const interactionTraces = [];
+        
+        // Add connection lines with distance labels
+        data.forEach((d, i) => {
+            if (humanPositions[i]) {
+                // Connection line
+                interactionTraces.push({
+                    x: [d.posX, humanPositions[i].x],
+                    y: [d.posY, humanPositions[i].y],
+                    mode: 'lines',
+                    type: 'scatter',
+                    showlegend: false,
+                    line: {
+                        color: getZoneColor(d.zone),
+                        width: 3
+                    },
+                    text: `Distance: ${d.closest.toFixed(2)}m`,
+                    hoverinfo: 'text'
+                });
+            }
+        });
+        
+        // Robot trajectory
+        interactionTraces.push({
+            x: data.map(d => d.posX),
+            y: data.map(d => d.posY),
+            mode: 'lines+markers+text',
+            type: 'scatter',
+            name: 'Robot Path',
+            line: {color: '#667eea', width: 3},
+            marker: {
+                size: 15,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            text: data.map(d => d.sample),
+            textposition: 'top center',
+            textfont: {size: 10, color: '#000', family: 'Arial Black'},
+            hovertext: data.map(d => `Sample ${d.sample}<br>Robot: (${d.posX.toFixed(2)}, ${d.posY.toFixed(2)})<br>Zone: ${d.zone}<br>Distance: ${d.closest.toFixed(2)}m`),
+            hoverinfo: 'text'
+        });
+        
+        // Human positions
+        interactionTraces.push({
+            x: humanPositions.map(h => h.x),
+            y: humanPositions.map(h => h.y),
+            mode: 'markers+text',
+            type: 'scatter',
+            name: 'Human',
+            marker: {
+                size: 25,
+                symbol: 'star',
+                color: '#ff4444',
+                line: {color: '#ffffff', width: 3}
+            },
+            text: humanPositions.map((_, i) => '👤'),
+            textfont: {size: 20},
+            textposition: 'middle center',
+            hovertext: humanPositions.map((h, i) => `Human at Sample ${i+1}<br>Position: (${h.x.toFixed(2)}, ${h.y.toFixed(2)})`),
+            hoverinfo: 'text'
+        });
+        
+        // Start position
+        interactionTraces.push({
+            x: [data[0].posX],
+            y: [data[0].posY],
+            mode: 'markers+text',
+            type: 'scatter',
+            name: 'Start',
+            marker: {size: 20, color: '#32cd32', symbol: 'circle'},
+            text: ['START'],
+            textposition: 'bottom center',
+            textfont: {size: 12, color: '#32cd32', family: 'Arial Black'}
+        });
+        
+        // End position
+        interactionTraces.push({
+            x: [data[data.length-1].posX],
+            y: [data[data.length-1].posY],
+            mode: 'markers+text',
+            type: 'scatter',
+            name: 'End',
+            marker: {size: 20, color: '#ff0000', symbol: 'x'},
+            text: ['END'],
+            textposition: 'top center',
+            textfont: {size: 12, color: '#ff0000', family: 'Arial Black'}
+        });
+        
+        Plotly.newPlot('plot-interaction', interactionTraces, {
+            title: '',
+            xaxis: {title: 'X Position (m) - Right →', zeroline: true},
+            yaxis: {title: 'Y Position (m) - Forward ↑', zeroline: true, scaleanchor: 'x'},
+            hovermode: 'closest',
+            height: 600,
+            showlegend: true
+        });
+        
+        // 3. Velocity Vectors
+        const velocityBase = {
+            x: data.map(d => d.posX),
+            y: data.map(d => d.posY),
+            mode: 'lines+markers',
+            line: {color: '#667eea', width: 2},
+            marker: {size: 8, color: '#667eea'},
+            name: 'Robot Path',
+            showlegend: true
+        };
+        
+        const velocityHumans = {
+            x: humanPositions.map(h => h.x),
+            y: humanPositions.map(h => h.y),
+            mode: 'markers',
+            marker: {
+                size: 18,
+                symbol: 'star',
+                color: '#ff4444',
+                line: {color: '#ffffff', width: 2}
+            },
+            name: 'Humans',
+            showlegend: true
+        };
+        
+        const velocityArrows = data.map(d => ({
+            ax: d.posX,
+            ay: d.posY,
+            axref: 'x',
+            ayref: 'y',
+            x: d.posX + d.velX * 0.2,
+            y: d.posY + d.velY * 0.2,
+            xref: 'x',
+            yref: 'y',
+            showarrow: true,
+            arrowhead: 2,
+            arrowsize: 1.5,
+            arrowwidth: 2,
+            arrowcolor: getZoneColor(d.zone)
+        }));
+        
+        Plotly.newPlot('plot-velocity', [velocityBase, velocityHumans], {
+            title: '',
+            xaxis: {title: 'X Position (m)'},
+            yaxis: {title: 'Y Position (m)', scaleanchor: 'x'},
+            annotations: velocityArrows,
+            height: 500
+        });
+        
+        // 4. Force Vectors
+        const forceBase = {
+            x: data.map(d => d.posX),
+            y: data.map(d => d.posY),
+            mode: 'lines+markers',
+            line: {color: '#667eea', width: 2},
+            marker: {size: 8, color: '#667eea'},
+            name: 'Robot Path',
+            showlegend: true
+        };
+        
+        const forceHumans = {
+            x: humanPositions.map(h => h.x),
+            y: humanPositions.map(h => h.y),
+            mode: 'markers',
+            marker: {
+                size: 18,
+                symbol: 'star',
+                color: '#ff4444',
+                line: {color: '#ffffff', width: 2}
+            },
+            name: 'Humans',
+            showlegend: true
+        };
+        
+        const forceArrows = data.map(d => {
+            const mag = Math.sqrt(d.forceX * d.forceX + d.forceY * d.forceY);
+            const scale = mag > 0 ? 0.3 / mag : 0;
+            return {
+                ax: d.posX,
+                ay: d.posY,
+                axref: 'x',
+                ayref: 'y',
+                x: d.posX + d.forceX * scale,
+                y: d.posY + d.forceY * scale,
+                xref: 'x',
+                yref: 'y',
+                showarrow: true,
+                arrowhead: 2,
+                arrowsize: 1.5,
+                arrowwidth: 3,
+                arrowcolor: mag > 1 ? '#ff4444' : (mag > 0.5 ? '#ff8c00' : '#32cd32')
+            };
+        });
+        
+        Plotly.newPlot('plot-forces', [forceBase, forceHumans], {
+            title: '',
+            xaxis: {title: 'X Position (m)'},
+            yaxis: {title: 'Y Position (m)', scaleanchor: 'x'},
+            annotations: forceArrows,
+            height: 500
+        });
+        
+        // 5. Proximity Plot
+        const proximityData = data.filter(d => d.closest !== Infinity);
+        const proximityTrace = {
+            x: proximityData.map(d => d.time),
+            y: proximityData.map(d => d.closest),
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Distance to Human',
+            line: {color: '#32cd32', width: 3},
+            marker: {size: 10}
+        };
+        
+        Plotly.newPlot('plot-proximity', [
+            proximityTrace,
+            {x: [0, 1100], y: [0.45, 0.45], mode: 'lines', name: 'Intimate (0.45m)', line: {color: '#ff4444', dash: 'dash', width: 2}},
+            {x: [0, 1100], y: [1.20, 1.20], mode: 'lines', name: 'Personal (1.20m)', line: {color: '#ff8c00', dash: 'dash', width: 2}},
+            {x: [0, 1100], y: [3.60, 3.60], mode: 'lines', name: 'Social (3.60m)', line: {color: '#ffd700', dash: 'dash', width: 2}}
+        ], {
+            title: '',
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'Distance (m)', range: [0, 4]},
+            hovermode: 'closest',
+            height: 400
+        });
+        
+        // 6. Force Magnitude
+        const forceMag = data.map(d => Math.sqrt(d.forceX * d.forceX + d.forceY * d.forceY));
+        const forceMagTrace = {
+            x: data.map(d => d.time),
+            y: forceMag,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Force Magnitude',
+            line: {color: '#ff4444', width: 3},
+            marker: {
+                size: 12,
+                color: data.map(d => getZoneColor(d.zone)),
+                line: {color: '#000', width: 2}
+            },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(255, 68, 68, 0.2)'
+        };
+        
+        Plotly.newPlot('plot-force-mag', [forceMagTrace], {
+            title: '',
+            xaxis: {title: 'Time (s)'},
+            yaxis: {title: 'Force Magnitude (N)'},
+            hovermode: 'closest',
+            height: 400
+        });
+        
+        // 7. Zone Distribution (Pie Chart)
+        const zoneCounts = {};
+        data.forEach(d => {
+            zoneCounts[d.zone] = (zoneCounts[d.zone] || 0) + 1;
+        });
+        
+        const zoneTrace = {
+            labels: Object.keys(zoneCounts),
+            values: Object.values(zoneCounts),
+            type: 'pie',
+            marker: {
+                colors: Object.keys(zoneCounts).map(z => getZoneColor(z))
+            },
+            textinfo: 'label+percent',
+            textfont: {size: 16}
+        };
+        
+        Plotly.newPlot('plot-zones', [zoneTrace], {
+            title: '',
+            height: 400
+        });
+        
+        // 8. Data Table
+        let tableHTML = '<table style="width:100%; border-collapse: collapse;">';
+        tableHTML += '<thead><tr style="background: #667eea; color: white;">';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Sample</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Time (s)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Robot X (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Robot Y (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Human X (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Human Y (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Speed (m/s)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Zone</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Distance (m)</th>';
+        tableHTML += '<th style="padding: 12px; border: 1px solid #ddd;">Command</th>';
+        tableHTML += '</tr></thead><tbody>';
+        
+        data.forEach((d, i) => {
+            const bgColor = i % 2 === 0 ? '#f8f9fa' : 'white';
+            const human = humanPositions[i];
+            tableHTML += `<tr style="background: ${bgColor};">`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.sample}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.time.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.posX.toFixed(3)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.posY.toFixed(3)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${human ? human.x.toFixed(3) : '-'}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${human ? human.y.toFixed(3) : '-'}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.speed.toFixed(3)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: ${getZoneColor(d.zone)}; color: white; font-weight: bold;">${d.zone}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.closest === Infinity ? '∞' : d.closest.toFixed(2)}</td>`;
+            tableHTML += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${d.command}</td>`;
+            tableHTML += '</tr>';
+        });
+        
+        tableHTML += '</tbody></table>';
+        document.getElementById('data-table').innerHTML = tableHTML;
+        
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
