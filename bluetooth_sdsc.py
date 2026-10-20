@@ -49,6 +49,7 @@ import time
 import json
 from collections import deque
 
+# pyrefly: ignore [missing-import]
 import pygame
 import serial
 import serial.tools.list_ports
@@ -159,6 +160,8 @@ class HumanDetector:
         
         # Detection state
         self.detections = []
+        self.last_frame = None    # Cache frame terakhir untuk visualisasi
+        self.last_results = None  # Cache YOLO results terakhir
         self.lock = threading.Lock()
         
         # Tracking
@@ -245,6 +248,7 @@ class HumanDetector:
             color_frame = aligned_frames.get_color_frame()
             
             if not depth_frame or not color_frame:
+                self.logger("⚠️ Missing depth or color frame")
                 return None, None
             
             frame = np.asanyarray(color_frame.get_data())
@@ -264,10 +268,41 @@ class HumanDetector:
                 cx = int((x1 + x2) / 2)
                 cy = int((y1 + y2) / 2)
                 
-                # Get depth
+                # ═══════════════════════════════════════════════════════════════════════════
+                # FIX: Get depth with multiple sampling points for robustness
+                # Sometimes center point has invalid depth (0.0), so we try nearby points
+                # ═══════════════════════════════════════════════════════════════════════════
+                
+                # Try center first
                 distance = depth_frame.get_distance(cx, cy)
+                
+                # If center is invalid, try sampling multiple points in the bounding box
                 if distance <= MIN_DISTANCE or distance > MAX_DISTANCE:
-                    continue
+                    # Sample 5 points: center, top-center, bottom-center, left-center, right-center
+                    sample_points = [
+                        (cx, cy),                           # center
+                        (cx, int(cy - (y2-y1)*0.25)),      # upper-center
+                        (cx, int(cy + (y2-y1)*0.25)),      # lower-center  
+                        (int(cx - (x2-x1)*0.15), cy),      # left-center
+                        (int(cx + (x2-x1)*0.15), cy),      # right-center
+                    ]
+                    
+                    valid_depths = []
+                    for sx, sy in sample_points:
+                        # Ensure point is within bounds
+                        if 0 <= sx < depth_frame.get_width() and 0 <= sy < depth_frame.get_height():
+                            d = depth_frame.get_distance(sx, sy)
+                            if MIN_DISTANCE < d <= MAX_DISTANCE:
+                                valid_depths.append(d)
+                    
+                    if len(valid_depths) == 0:
+                        # No valid depth found - skip this detection
+                        self.logger(f"⚠️ No valid depth for detection at ({cx},{cy}), bbox confidence {conf:.2f}")
+                        continue
+                    
+                    # Use median of valid depths for robustness
+                    distance = sorted(valid_depths)[len(valid_depths) // 2]
+                    self.logger(f"✅ Used multi-point sampling: {distance:.2f}m from {len(valid_depths)} valid points")
                 
                 # Tracking
                 human_id = self.match_detection_to_track(cx, cy)
@@ -275,6 +310,9 @@ class HumanDetector:
                 # Transform to robot frame
                 cam_x, cam_y, cam_z = self.pixel_to_camera_frame(cx, cy, distance)
                 robot_x, robot_y, robot_z = self.camera_to_robot_frame(cam_x, cam_y, cam_z)
+                
+                # Calculate 2D distance for logging
+                dist_2d = math.hypot(robot_x, robot_y)
                 
                 detection = {
                     'id': human_id,
@@ -290,10 +328,15 @@ class HumanDetector:
                     }
                 }
                 detections.append(detection)
+                
+                # Log successful detection
+                self.logger(f"✅ Detected ID{human_id}: dist={distance:.2f}m, 2D={dist_2d:.2f}m, pos=({robot_x:.2f},{robot_y:.2f}), conf={conf:.2f}")
             
             # Update shared state
             with self.lock:
                 self.detections = detections
+                self.last_frame = frame
+                self.last_results = results[0]
             
             return frame, results[0]
         
@@ -305,6 +348,15 @@ class HumanDetector:
         """Get current detections (thread-safe)"""
         with self.lock:
             return self.detections.copy()
+    
+    def get_last_frame(self):
+        """Get last captured frame dan YOLO results (thread-safe).
+        
+        Digunakan oleh visualisasi agar tidak perlu memanggil detect_once()
+        dari thread terpisah — mencegah race condition pada RealSense pipeline.
+        """
+        with self.lock:
+            return self.last_frame, self.last_results
     
     def run_detection_loop(self):
         """Run detection in separate thread"""
@@ -398,13 +450,14 @@ class SocialForceModulator:
         elif dist < R_PERSONAL:
             # PERSONAL zone: very aggressive (5x boost)
             lateral_multiplier = LATERAL_MULTIPLIER_PERSONAL
-        elif dist < R_SOCIAL:
-            # SOCIAL zone: aggressive (3x boost)
-            lateral_multiplier = LATERAL_MULTIPLIER_SOCIAL
         elif dist < R_EVASION_START:
-            # Early evasion: moderate boost (2x)
+            # Early evasion zone (3.5m - 3.6m): moderate boost (2x)
+            # NOTE: Check R_EVASION_START BEFORE R_SOCIAL karena R_EVASION_START < R_SOCIAL
             lateral_multiplier = LATERAL_MULTIPLIER_FAR
-        # else: dist >= R_EVASION_START, use 1.0x (base SFM)
+        elif dist < R_SOCIAL:
+            # SOCIAL zone (1.2m - 3.5m): aggressive (3x boost)
+            lateral_multiplier = LATERAL_MULTIPLIER_SOCIAL
+        # else: dist >= R_SOCIAL, use 1.0x (base SFM)
         
         # Apply multiplier to magnitude
         mag *= lateral_multiplier
@@ -580,14 +633,13 @@ def rotate_coordinates(x, y):
 
 def build_packet_with_sfm(axes, buttons, detections):
     """
-    Build packet with Social Force Model modulation
+    Build packet with Social Force Model modulation.
+    
+    FIX: SFM modulate_velocity selalu dipanggil dulu (agar fx_rep/fy_rep ter-update
+    untuk UI) SEBELUM deadman check mengembalikan paket netral.
     """
     def btn(i):
         return buttons[i] if 0 <= i < len(buttons) else 0
-    
-    # Deadman switch
-    if REQUIRE_DEADMAN and not btn(BTN_DEADMAN):
-        return f"<{NEUTRAL},{NEUTRAL},{NEUTRAL}>\n"
     
     # Read joystick
     raw_x = axes[AXIS_X] if AXIS_X < len(axes) else 0.0
@@ -615,11 +667,16 @@ def build_packet_with_sfm(axes, buttons, detections):
     if INVERT_ROTATION:
         rotation = -rotation
     
-    # Apply Social Force Model modulation
+    # FIX: Selalu update SFM state terlebih dahulu (untuk update UI F_rep)
+    # bahkan saat deadman tidak ditekan sekalipun.
     if sfm_modulator:
         forward, lateral, rotation = sfm_modulator.modulate_velocity(
             forward, lateral, rotation, detections
         )
+    
+    # Deadman switch: robot tidak bergerak, tapi SFM state sudah ter-update di atas
+    if REQUIRE_DEADMAN and not btn(BTN_DEADMAN):
+        return f"<{NEUTRAL},{NEUTRAL},{NEUTRAL}>\n"
     
     # Convert to packet
     return f"<{to_byte(lateral)},{to_byte(forward)},{to_byte(rotation)}>\n"
@@ -659,8 +716,11 @@ def close_serial(msg="Bluetooth: Disconnected"):
         except Exception:
             pass
     ser = None
-    connect_button.config(text="Connect", state=tk.NORMAL)
-    status_serial.set(msg)
+    try:
+        connect_button.config(text="Connect", state=tk.NORMAL)
+        status_serial.set(msg)
+    except NameError:
+        pass  # GUI belum diinisialisasi saat close_serial dipanggil
 
 
 def connect_serial():
@@ -739,6 +799,19 @@ def read_input():
     # Get detections from detector
     detections = detector.get_detections() if detector else []
     
+    # ─────────────────────────────────────────────────────────────────
+    # FIX: Selalu update state SFM dari detections, TERLEPAS dari apakah
+    # joystick terhubung atau window punya fokus.
+    # Tanpa ini, panel UI (Humans, Zone, F_rep) tidak pernah ter-update
+    # karena modulate_velocity hanya dipanggil di build_packet_with_sfm
+    # yang hanya berjalan saat joystick connected & window focused.
+    # ─────────────────────────────────────────────────────────────────
+    if sfm_modulator and detections:
+        sfm_modulator.modulate_velocity(0.0, 0.0, 0.0, detections)
+    elif sfm_modulator and not detections:
+        # Reset state saat tidak ada manusia
+        sfm_modulator.modulate_velocity(0.0, 0.0, 0.0, [])
+    
     # Default: STOP
     packet = neutral_packet()
     
@@ -798,12 +871,22 @@ def update_ui(detections):
 # ══════════════════════════════════════════════════════════════════
 
 def run_visualization():
-    """Run OpenCV visualization window"""
+    """Run OpenCV visualization window.
+    
+    Membaca frame dari cache detector (get_last_frame) agar tidak terjadi
+    race condition dengan run_detection_loop pada RealSense pipeline.
+    Rate limiting menggunakan cv2.waitKey(sleep_ms) sesuai CAMERA_FPS.
+    """
     if not detector:
         return
     
+    frame_dt = 1.0 / CAMERA_FPS  # Target interval per frame
+    
     while True:
-        frame, results = detector.detect_once()
+        t_loop_start = time.time()
+        # FIX Bug #1 & #5: Gunakan frame cache — TIDAK memanggil detect_once()
+        # dari thread ini agar tidak terjadi race condition pada pipeline.
+        frame, results = detector.get_last_frame()
         
         if frame is None:
             time.sleep(0.05)
@@ -817,6 +900,51 @@ def run_visualization():
         
         # Get detections
         detections = detector.get_detections()
+        
+        # ═══════════════════════════════════════════════════════════════════════════
+        # DEBUG: Show depth frame statistics
+        # ═══════════════════════════════════════════════════════════════════════════
+        # FIX Bug #4: results sudah berupa Results object (bukan list),
+        # jangan lakukan results[0] lagi.
+        if results and len(results.boxes) > 0:
+            # Get current depth frame for debugging
+            try:
+                frames = detector.pipeline.wait_for_frames(timeout_ms=10)
+                aligned_frames = detector.align.process(frames)
+                depth_frame = aligned_frames.get_depth_frame()
+                
+                if depth_frame:
+                    # Show depth stats for first detection box
+                    box = results.boxes.xyxy.cpu().numpy()[0]  # FIX Bug #4
+                    x1, y1, x2, y2 = map(int, box[:4])
+                    cx_debug = int((x1 + x2) / 2)
+                    cy_debug = int((y1 + y2) / 2)
+                    
+                    depth_center = depth_frame.get_distance(cx_debug, cy_debug)
+                    
+                    # Show debug info on frame
+                    cv2.putText(annotated, f"DEBUG Depth@center: {depth_center:.3f}m",
+                               (10, CAMERA_HEIGHT - 60), cv2.FONT_HERSHEY_SIMPLEX, 
+                               0.5, (0, 255, 255), 1)
+                    
+                    # Sample 3x3 grid around center
+                    depths_around = []
+                    for dy in [-20, 0, 20]:
+                        for dx in [-20, 0, 20]:
+                            d = depth_frame.get_distance(cx_debug + dx, cy_debug + dy)
+                            if d > 0:
+                                depths_around.append(d)
+                    
+                    if depths_around:
+                        avg_depth = sum(depths_around) / len(depths_around)
+                        cv2.putText(annotated, f"DEBUG Avg depth (3x3): {avg_depth:.3f}m",
+                                   (10, CAMERA_HEIGHT - 40), cv2.FONT_HERSHEY_SIMPLEX,
+                                   0.5, (0, 255, 255), 1)
+                        cv2.putText(annotated, f"DEBUG Valid samples: {len(depths_around)}/9",
+                                   (10, CAMERA_HEIGHT - 20), cv2.FONT_HERSHEY_SIMPLEX,
+                                   0.5, (0, 255, 255), 1)
+            except Exception:
+                pass  # FIX Bug #6: Abaikan error debug depth (non-critical)
         
         # Annotate with distance and ID
         for det in detections:
@@ -838,7 +966,8 @@ def run_visualization():
             
             # Zone indicator
             dist_2d = math.hypot(det['position']['x'], det['position']['y'])
-            zone = sfm_modulator.get_proxemic_zone(dist_2d)
+            # FIX Bug #2: sfm_modulator bisa None saat inisialisasi belum selesai
+            zone = sfm_modulator.get_proxemic_zone(dist_2d) if sfm_modulator else "PUBLIC"
             zone_colors = {
                 "INTIMATE": (0, 0, 255),
                 "PERSONAL": (0, 165, 255),
@@ -880,7 +1009,12 @@ def run_visualization():
         
         cv2.imshow("Bluetooth SDSC - Human Detection", annotated)
         
-        key = cv2.waitKey(1) & 0xFF
+        # Rate limiting: gunakan waitKey sebagai sleep agar FPS terkontrol
+        # dan tidak terjadi busy-loop saat membaca frame cache.
+        elapsed = time.time() - t_loop_start
+        sleep_ms = max(1, int((frame_dt - elapsed) * 1000))
+        
+        key = cv2.waitKey(sleep_ms) & 0xFF
         if key == ord('q'):
             break
     
