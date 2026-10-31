@@ -85,38 +85,38 @@ ROTATION_ANGLE_RAD = math.radians(-ROTATION_ANGLE_DEG)  # negative for CW
 COS_THETA = math.cos(ROTATION_ANGLE_RAD)  # cos(-135°) = -√2/2
 SIN_THETA = math.sin(ROTATION_ANGLE_RAD)  # sin(-135°) = -√2/2
 
-# Social Force Model Parameters
-SFM_A = 5.0              # N - repulsive force magnitude (base)
-SFM_B = 0.8              # m - repulsive force range
-SFM_MASS = 5.0           # kg - robot effective mass
-SFM_TAU = 0.5            # s - relaxation time
-
-# Proxemic Zones (Edward T. Hall, 1966)
-R_INTIMATE = 0.45        # m - emergency stop zone
-R_PERSONAL = 1.20        # m - (no slowdown in this mode)
-R_SOCIAL = 3.60          # m - (no slowdown in this mode)
-
 # ═══════════════════════════════════════════════════════════════════════════
-# PARAMETERS v1.1 - Faster Evasion & Stronger Lateral Response
-# (Speed reduction constants dihapus — tidak dipakai di mode ini)
+# Social-DSC Parameters  (ported from pimpysim/sim.js — Chen & Liu, IECON 2024)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Early activation threshold
-R_EVASION_START = 3.50  # m - mulai menghindar lebih awal
+# Proxemic Zones
+R_INTIMATE = 0.45   # m
+R_PERSONAL = 1.20   # m
+R_SOCIAL   = 3.60   # m
 
-# Lateral force multipliers (progressive based on distance)
-LATERAL_MULTIPLIER_FAR = 2.0      # 3.5-3.6m (early response)
-LATERAL_MULTIPLIER_SOCIAL = 3.0   # 1.2-3.5m (aggressive avoidance)
-LATERAL_MULTIPLIER_PERSONAL = 5.0 # 0.45-1.2m (very aggressive)
-LATERAL_MULTIPLIER_INTIMATE = 8.0 # <0.45m (emergency)
+# SIM — F_pa: Pedestrian Avoidance Force (Eq. 16)
+AP = 2.0    # repulsion amplitude (N)
+BP = 0.8    # repulsion range (m)
+DP = 0.0    # offset distance
 
-# ══════════════════════════════════════════════════════════════════
-# v2 SPECIFIC: NO speed reduction in any zone except INTIMATE
-# ══════════════════════════════════════════════════════════════════
-# SPEED_MULTIPLIER_SOCIAL   = 1.0  (disabled, full speed)
-# SPEED_MULTIPLIER_PERSONAL = 1.0  (disabled, full speed)
-# EARLY_EVASION_SPEED       = 1.0  (disabled, full speed)
-# INTIMATE stops completely (emergency safety requirement)
+# SIM — F_sr: Social Rule Force (Eq. 21)  — right-hand traffic
+KSR = 1.0   # sigmoid gain
+BSR = 3.0   # sigmoid steepness
+DSR = 0.2   # lateral offset (right-hand-side bias)
+
+# SIM global
+KSIM = 0.35 # velocity output scaling (paper: 0.3)
+WPA  = 1.0  # weight F_pa
+WPP  = 0.5  # weight F_pp (pedestrian priority)
+WSR  = 0.5  # weight F_sr (social rule)
+
+# Asymmetric Gaussian zone shape (metres)
+SIGMA_H = 2.4   # ahead of pedestrian  (= ΔT·||v|| = 2s × 1.2m/s)
+SIGMA_R = 1.2   # behind pedestrian
+SIGMA_L = 1.2   # lateral
+
+# DSC eigenvalue sigmoid steepness
+LAMBDA_V_K = 10.0
 
 # Camera & Detection
 CAMERA_WIDTH = 640
@@ -362,179 +362,329 @@ class HumanDetector:
 
 class SocialForceModulator:
     """
-    Social Force Model — Direction-Only Mode (v2)
+    Social-DSC Modulator — ported dari pimpysim/sim.js
+    Implementasi: Chen & Liu, IECON 2024
+    "Dynamical System based Socially-aware Navigation for Mobile Robot"
 
-    Perbedaan dari v1:
-      - Gaya repulsif SFM tetap dihitung & diterapkan (robot berbelok menghindari)
-      - TIDAK ada pengurangan kecepatan di zona PERSONAL / SOCIAL / early evasion
-      - HANYA zona INTIMATE yang memaksa robot berhenti total (emergency safety)
+    Algoritma:
+      1. F_pa  — Pedestrian Avoidance Force  (Eq. 16-18)
+      2. F_pp  — Pedestrian Priority Force   (Eq. 19-20)
+      3. F_sr  — Social Rule Force           (Eq. 21-22)
+      4. f_SIM — Gabungan ke-tiga force      (Eq. 14-15)
+      5. M     — DSC Modulation Matrix       (Eq. 5-13)
+      6. v_out = M · (v_nominal + f_SIM)     (Eq. 10)
+
+    Input/output ke bluetooth tidak berubah.
+    INTIMATE zone tetap emergency stop.
     """
-    
+
     def __init__(self, logger_callback=None):
         self.logger = logger_callback or print
-        
-        # State
-        self.detections = []
-        self.closest_human_dist = 999.0
-        self.closest_human_zone = "PUBLIC"
-        
-        # Force vectors (for visualization)
-        self.fx_rep = 0.0
-        self.fy_rep = 0.0
-    
+
+        # Public state (dibaca oleh UI & visualisasi)
+        self.detections          = []
+        self.closest_human_dist  = 999.0
+        self.closest_human_zone  = "PUBLIC"
+        self.fx_rep              = 0.0   # total f_SIM x (untuk label "Repulsion")
+        self.fy_rep              = 0.0   # total f_SIM y
+
+    # ──────────────────────────────────────────────────────────────
+    # Zona proxemik
+    # ──────────────────────────────────────────────────────────────
     def get_proxemic_zone(self, dist):
-        """Determine proxemic zone"""
-        if dist < R_INTIMATE:
-            return "INTIMATE"
-        elif dist < R_PERSONAL:
-            return "PERSONAL"
-        elif dist < R_SOCIAL:
-            return "SOCIAL"
-        else:
-            return "PUBLIC"
-    
-    def compute_repulsive_force(self, robot_x, robot_y, human_x, human_y, distance):
+        if dist < R_INTIMATE: return "INTIMATE"
+        if dist < R_PERSONAL: return "PERSONAL"
+        if dist < R_SOCIAL:   return "SOCIAL"
+        return "PUBLIC"
+
+    # ──────────────────────────────────────────────────────────────
+    # Fungsi bantu (porting dari sim.js)
+    # ──────────────────────────────────────────────────────────────
+    @staticmethod
+    def _dot(ax, ay, bx, by):
+        return ax * bx + ay * by
+
+    @staticmethod
+    def _cross2d(ax, ay, bx, by):
+        return ax * by - ay * bx
+
+    @staticmethod
+    def _norm(x, y):
+        m = math.hypot(x, y) or 1e-9
+        return x / m, y / m
+
+    # ──────────────────────────────────────────────────────────────
+    # Γ — Asymmetric Gaussian distance (Eq. 3)
+    #   Returns Γ; Γ = 1 is the zone boundary
+    # ──────────────────────────────────────────────────────────────
+    def _gamma(self, rx, ry, hx, hy, h_angle):
+        dx, dy = rx - hx, ry - hy
+        cos_a, sin_a = math.cos(h_angle), math.sin(h_angle)
+        d_long =  cos_a * dx + sin_a * dy   # along heading
+        d_lat  = -sin_a * dx + cos_a * dy   # lateral
+        sigma_long = SIGMA_H if d_long >= 0 else SIGMA_R
+        return (d_long / sigma_long) ** 2 + (d_lat / SIGMA_L) ** 2
+
+    # Numerical gradient of Γ w.r.t. robot position
+    def _gamma_grad(self, rx, ry, hx, hy, h_angle):
+        eps = 0.001
+        g0 = self._gamma(rx,       ry,       hx, hy, h_angle)
+        gx = (self._gamma(rx + eps, ry,       hx, hy, h_angle) - g0) / eps
+        gy = (self._gamma(rx,       ry + eps, hx, hy, h_angle) - g0) / eps
+        return gx, gy
+
+    # ──────────────────────────────────────────────────────────────
+    # λv — approach-velocity eigenvalue (Eq. 7)
+    # ──────────────────────────────────────────────────────────────
+    def _lambda_v(self, rx, ry, rvx, rvy, hx, hy, hvx, hvy):
+        rel_vx, rel_vy = rvx - hvx, rvy - hvy
+        dir_x,  dir_y  = rx  - hx,  ry  - hy
+        d_dot = self._dot(rel_vx, rel_vy, dir_x, dir_y)
+        return 1.0 / (1.0 + math.exp(-LAMBDA_V_K * d_dot))
+
+    # ──────────────────────────────────────────────────────────────
+    # DSC Modulation matrix for one human (Eq. 5-9)
+    # Returns 2×2 matrix elements m00, m01, m10, m11 and Gamma
+    # ──────────────────────────────────────────────────────────────
+    def _dsc_modulation_one(self, rx, ry, rvx, rvy, hx, hy, h_angle, h_speed):
+        Gamma = self._gamma(rx, ry, hx, hy, h_angle)
+
+        hvx = math.cos(h_angle) * h_speed
+        hvy = math.sin(h_angle) * h_speed
+        lv  = self._lambda_v(rx, ry, rvx, rvy, hx, hy, hvx, hvy)
+
+        inv   = 1.0 / max(Gamma, 0.01)
+        lam_n = lv + (1 - lv) * (1 - inv)   # Eq. 7 — 0 at boundary
+        lam_e = lv + (1 - lv) * (1 + inv)   # Eq. 8 — large at boundary
+
+        gx, gy = self._gamma_grad(rx, ry, hx, hy, h_angle)
+        nx, ny = self._norm(gx, gy)          # normal vector
+        ex, ey = -ny, nx                     # tangent (90° CCW)
+
+        # M = E D E^T  (E orthogonal)
+        m00 = lam_n * nx * nx + lam_e * ex * ex
+        m01 = lam_n * nx * ny + lam_e * ex * ey
+        m10 = lam_n * ny * nx + lam_e * ey * ex
+        m11 = lam_n * ny * ny + lam_e * ey * ey
+        return m00, m01, m10, m11, Gamma
+
+    # ──────────────────────────────────────────────────────────────
+    # Combined modulation matrix — weighted avg (Eq. 11-13)
+    # ──────────────────────────────────────────────────────────────
+    def _combined_modulation(self, rx, ry, rvx, rvy, humans_info):
         """
-        Social Force Model repulsive force with progressive lateral multiplier:
-        F_rep = A × exp(-d/B) × n̂ × lateral_multiplier
-
-        Args:
-            robot_x, robot_y: Robot position
-            human_x, human_y: Human position
-            distance: Pre-calculated distance
-
-        Returns:
-            (fx, fy): Repulsive force components
+        humans_info: list of (hx, hy, h_angle, h_speed)
+        Returns: m00, m01, m10, m11
         """
-        dx = robot_x - human_x
-        dy = robot_y - human_y
-        dist = distance
+        if not humans_info:
+            return 1.0, 0.0, 0.0, 1.0
 
-        if dist < 1e-6:
-            return 100.0, 0.0  # Very close - push hard (emergency)
+        mats = [self._dsc_modulation_one(rx, ry, rvx, rvy, hx, hy, ang, spd)
+                for hx, hy, ang, spd in humans_info]
 
-        # Base magnitude
-        mag = SFM_A * math.exp(-dist / SFM_B)
+        if len(mats) == 1:
+            m00, m01, m10, m11, _ = mats[0]
+            return m00, m01, m10, m11
 
-        # Progressive lateral force multiplier
-        lateral_multiplier = 1.0
+        Gammas = [m[4] for m in mats]
 
-        if dist < R_INTIMATE:
-            lateral_multiplier = LATERAL_MULTIPLIER_INTIMATE
-        elif dist < R_PERSONAL:
-            lateral_multiplier = LATERAL_MULTIPLIER_PERSONAL
-        elif dist < R_EVASION_START:
-            # NOTE: Check R_EVASION_START BEFORE R_SOCIAL karena R_EVASION_START < R_SOCIAL
-            lateral_multiplier = LATERAL_MULTIPLIER_FAR
-        elif dist < R_SOCIAL:
-            lateral_multiplier = LATERAL_MULTIPLIER_SOCIAL
-        # else: dist >= R_SOCIAL, use 1.0x (base SFM)
+        # ω'_i = Π_{j≠i} (Γ_j − 1)  [Eq. 13]
+        omega_prime = []
+        for i in range(len(Gammas)):
+            prod = 1.0
+            for j, gj in enumerate(Gammas):
+                if j != i:
+                    prod *= max(gj - 1.0, 0.0)
+            omega_prime.append(prod)
 
-        mag *= lateral_multiplier
+        sum_w = sum(omega_prime) or 1.0
+        omega = [w / sum_w for w in omega_prime]  # [Eq. 12]
 
-        # Direction (away from human)
-        fx = mag * dx / dist
-        fy = mag * dy / dist
+        cm00 = sum(omega[i] * mats[i][0] for i in range(len(mats)))
+        cm01 = sum(omega[i] * mats[i][1] for i in range(len(mats)))
+        cm10 = sum(omega[i] * mats[i][2] for i in range(len(mats)))
+        cm11 = sum(omega[i] * mats[i][3] for i in range(len(mats)))
+        return cm00, cm01, cm10, cm11
 
+    # ──────────────────────────────────────────────────────────────
+    # SIM Forces
+    # ──────────────────────────────────────────────────────────────
+    def _compute_fpa(self, rx, ry, humans_info):
+        """F_pa — Pedestrian Avoidance (Eq. 16-18)"""
+        fx, fy = 0.0, 0.0
+        for hx, hy, _, _ in humans_info:
+            dx, dy = rx - hx, ry - hy
+            dist   = math.hypot(dx, dy)
+            if dist < 1e-6:
+                fx += 50.0; continue
+            mag = AP * math.exp((DP - dist) / BP)
+            fx += mag * dx / dist
+            fy += mag * dy / dist
         return fx, fy
-    
+
+    def _compute_fpp(self, rx, ry, humans_info):
+        """F_pp — Pedestrian Priority (Eq. 19-20)
+        Attacts robot toward a point 1 m to the right of each pedestrian,
+        clearing the pedestrian's forward path.
+        """
+        fx, fy = 0.0, 0.0
+        for hx, hy, h_angle, _ in humans_info:
+            dx, dy = rx - hx, ry - hy
+            dist   = math.hypot(dx, dy)
+            if dist > R_SOCIAL * 1.1 or dist < 1e-6:
+                continue
+            hfx = math.cos(h_angle)
+            hfy = math.sin(h_angle)
+            lx, ly = -hfy, hfx  # left-normal of pedestrian
+
+            # Target = 1 m to pedestrian's right (−left)
+            tx, ty = hx - lx, hy - ly
+            tdx, tdy = tx - rx, ty - ry
+            tdist = math.hypot(tdx, tdy)
+            if tdist < 1e-6:
+                continue
+            mag = AP * 0.5 * math.exp((DP - dist) / BP)
+            fx += mag * tdx / tdist
+            fy += mag * tdy / tdist
+        return fx, fy
+
+    def _compute_fsr(self, rx, ry, humans_info):
+        """F_sr — Social Rule / right-hand traffic (Eq. 21-22)"""
+        fx, fy = 0.0, 0.0
+        for hx, hy, h_angle, _ in humans_info:
+            dx, dy = rx - hx, ry - hy
+            dist   = math.hypot(dx, dy)
+            if dist > R_SOCIAL or dist < 1e-6:
+                continue
+            nvx = math.cos(h_angle)
+            nvy = math.sin(h_angle)
+            # left-normal of pedestrian heading
+            nv_lx, nv_ly = -nvy, nvx
+
+            # λr = cross(nv, ξ̃) − δ  [Eq. 22]
+            lambda_r = self._cross2d(nvx, nvy, dx / dist, dy / dist) - DSR
+            sigmoid  = 1.0 / (1.0 + math.exp(-BSR * lambda_r))
+
+            mag = KSR * sigmoid
+            fx += mag * nv_lx
+            fy += mag * nv_ly
+        return fx, fy
+
+    def _compute_fsim(self, rx, ry, humans_info):
+        """f_SIM — combine F_pa, F_pp, F_sr and normalise (Eq. 14-15)"""
+        fpa_x, fpa_y = self._compute_fpa(rx, ry, humans_info)
+        fpp_x, fpp_y = self._compute_fpp(rx, ry, humans_info)
+        fsr_x, fsr_y = self._compute_fsr(rx, ry, humans_info)
+
+        Fx = WPA * fpa_x + WPP * fpp_x + WSR * fsr_x
+        Fy = WPA * fpa_y + WPP * fpp_y + WSR * fsr_y
+        mag = math.hypot(Fx, Fy)
+
+        # Store for diagnostics (F_pa as "repulsion" shown in UI)
+        self.fx_rep = fpa_x
+        self.fy_rep = fpa_y
+        self._fsr_x = fsr_x
+        self._fsr_y = fsr_y
+
+        if mag < 0.01:
+            return 0.0, 0.0
+        return KSIM * Fx / mag, KSIM * Fy / mag
+
+    # ──────────────────────────────────────────────────────────────
+    # Main entry — modulate_velocity
+    # Signature identik dengan v1/v2 sehingga read_input() tidak perlu diubah
+    # ──────────────────────────────────────────────────────────────
     def modulate_velocity(self, vx_desired, vy_desired, vw_desired, detections):
         """
-        Apply Social Force Model to modulate desired velocity.
-
-        v2 MODE — NO SPEED REDUCTION:
-          - Gaya repulsif tetap dihitung → arah gerak robot dibelokkan
-          - Kecepatan TIDAK dikurangi di zona PERSONAL / SOCIAL / early evasion
-          - INTIMATE zone → emergency stop (wajib untuk keselamatan)
+        Social-DSC velocity modulation.
 
         Args:
-            vx_desired: forward velocity (-1 to 1)
-            vy_desired: lateral velocity (-1 to 1)
-            vw_desired: angular velocity (-1 to 1)
-            detections: list of human detections
+            vx_desired : forward velocity [-1, 1]
+            vy_desired : lateral velocity [-1, 1]
+            vw_desired : angular velocity [-1, 1]
+            detections : list dari HumanDetector.get_detections()
 
         Returns:
-            (vx_mod, vy_mod, vw_mod): modulated velocities
+            (vx_mod, vy_mod, vw_mod)
         """
         self.detections = detections
 
-        if len(detections) == 0:
-            # No humans - pass through unchanged
+        if not detections:
             self.closest_human_dist = 999.0
             self.closest_human_zone = "PUBLIC"
             self.fx_rep = 0.0
             self.fy_rep = 0.0
             return vx_desired, vy_desired, vw_desired
 
-        # Calculate repulsive forces
-        fx_rep_total = 0.0
-        fy_rep_total = 0.0
+        # ── Konversi detections → format internal ──────────────────
+        # Robot berada di origin (0, 0) dalam robot frame
+        # hx = forward (x), hy = lateral (y)
+        # Heading manusia: tidak tersedia dari kamera → 0 rad (hadap depan)
+        # Speed manusia: tidak diketahui → 0 (asumsi diam)
+        humans_info = []  # list of (hx, hy, h_angle, h_speed)
         closest_dist = 999.0
 
-        for human in detections:
-            hx = human['position']['x']  # forward
-            hy = human['position']['y']  # left
-
-            dist = math.hypot(hx, hy)
+        for det in detections:
+            hx    = det['position']['x']   # forward
+            hy    = det['position']['y']   # lateral
+            dist  = math.hypot(hx, hy)
             if dist < closest_dist:
                 closest_dist = dist
+            # Heading manusia diperkirakan: menghadap robot (berlawanan arah)
+            h_angle = math.atan2(-hy, -hx)
+            h_speed = 0.0   # tidak ada odometri manusia dari kamera
+            humans_info.append((hx, hy, h_angle, h_speed))
 
-            frx, fry = self.compute_repulsive_force(0, 0, hx, hy, dist)
-            fx_rep_total += frx
-            fy_rep_total += fry
-
-        # Store for visualization
-        self.fx_rep = fx_rep_total
-        self.fy_rep = fy_rep_total
         self.closest_human_dist = closest_dist
         self.closest_human_zone = self.get_proxemic_zone(closest_dist)
 
-        # Convert force to velocity adjustment
-        gain = 50.0  # tuning parameter
-        vx_adj = fx_rep_total / (SFM_MASS * gain)
-        vy_adj = fy_rep_total / (SFM_MASS * gain)
+        # ── INTIMATE → emergency stop (safety invariant) ────────────
+        if self.closest_human_zone == "INTIMATE":
+            self.logger(f"[INTIMATE] {closest_dist:.2f}m — EMERGENCY STOP")
+            self.fx_rep = 0.0
+            self.fy_rep = 0.0
+            return 0.0, 0.0, 0.0
 
-        # Apply lateral/directional adjustment
-        vx_mod = vx_desired + vx_adj
-        vy_mod = vy_desired + vy_adj
+        # ── f_SIM: social inference forces ─────────────────────────
+        # Robot position = (0, 0), velocity = (vx_desired, vy_desired)
+        fsim_x, fsim_y = self._compute_fsim(0.0, 0.0, humans_info)
+
+        # ── Combined nominal + SIM ──────────────────────────────────
+        f_total_x = vx_desired + fsim_x
+        f_total_y = vy_desired + fsim_y
+
+        # ── DSC modulation matrix M ─────────────────────────────────
+        m00, m01, m10, m11 = self._combined_modulation(
+            0.0, 0.0, vx_desired, vy_desired, humans_info
+        )
+
+        # ── ξ̇ = M · f_total  (Eq. 10) ──────────────────────────────
+        vx_mod = m00 * f_total_x + m01 * f_total_y
+        vy_mod = m10 * f_total_x + m11 * f_total_y
         vw_mod = vw_desired
 
-        # Normalize to [-1, 1] (preserve direction, cap magnitude)
+        # ── Speed cap: preserve direction, cap magnitude at [-1, 1] ─
         speed = math.hypot(vx_mod, vy_mod)
         if speed > 1.0:
             vx_mod /= speed
             vy_mod /= speed
 
-        # ═══════════════════════════════════════════════════════════════
-        # v2: HANYA INTIMATE zone yang menghentikan robot
-        #     Zona lain (PERSONAL, SOCIAL, early evasion) → FULL SPEED
-        # ═══════════════════════════════════════════════════════════════
-        if self.closest_human_zone == "INTIMATE":
-            # Emergency stop — satu-satunya kondisi yang menghentikan robot
-            self.logger(f"🔴 INTIMATE ZONE ({closest_dist:.2f}m) - EMERGENCY STOP")
-            vx_mod = 0.0
-            vy_mod = 0.0
-            vw_mod = 0.0
-        elif self.closest_human_zone == "PERSONAL":
-            # v2: TIDAK diperlambat — hanya log zona
-            self.logger(f"🟠 PERSONAL ZONE ({closest_dist:.2f}m) - FULL SPEED (no reduction)")
-        elif self.closest_human_zone == "SOCIAL":
-            # v2: TIDAK diperlambat — hanya log zona
-            self.logger(f"🟡 SOCIAL ZONE ({closest_dist:.2f}m) - FULL SPEED (no reduction)")
-        elif closest_dist < R_EVASION_START:
-            # v2: TIDAK diperlambat — hanya log zona
-            self.logger(f"🟢 EARLY EVASION ({closest_dist:.2f}m) - FULL SPEED (no reduction)")
+        zone = self.closest_human_zone
+        if zone == "PERSONAL":
+            self.logger(f"[PERSONAL] {closest_dist:.2f}m — DSC active")
+        elif zone == "SOCIAL":
+            self.logger(f"[SOCIAL]   {closest_dist:.2f}m — DSC active")
 
         return vx_mod, vy_mod, vw_mod
-    
+
     def get_status(self):
-        """Get current SFM status"""
+        """Get current status — kompatibel dengan update_ui() yang sudah ada."""
         return {
             'closest_dist': self.closest_human_dist,
-            'zone': self.closest_human_zone,
-            'num_humans': len(self.detections),
-            'fx_rep': self.fx_rep,
-            'fy_rep': self.fy_rep
+            'zone':         self.closest_human_zone,
+            'num_humans':   len(self.detections),
+            'fx_rep':       self.fx_rep,   # F_pa x
+            'fy_rep':       self.fy_rep,   # F_pa y
         }
 
 

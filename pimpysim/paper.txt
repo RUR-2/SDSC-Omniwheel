@@ -1,0 +1,580 @@
+Dynamical System based Socially-aware Navigation
+for Mobile Robot
+Xiang Chen
+Institute of Control Systems
+University of Kaiserslautern Landau
+Kaiserslautern, Germany
+xiang.chen@rptu.de
+Steven Liu
+Institute of Control Systems
+University of Kaiserslautern Landau
+Kaiserslautern, Germany
+steven.liu@rptu.de
+Abstract—This paper presents a novel framework for socially-
+aware robot navigation in a pedestrian mixed environment. To
+improve the acceptance of mobile robots in daily life, robots
+should exhibit safe and socially acceptable motions to humans, as
+integrating social norms has been shown to contribute to comfort
+and socially-aware behavior in various studies. In this paper, we
+propose a novel framework, Socially-aware Dynamical System
+based Control (Social-DSC), which leverages the Dynamical
+System based Control (DSC) for collision avoidance and Social
+Force Model (SFM) for socially-aware robot navigation. While
+safety is guaranteed by the DSC framework, the social norms
+are considered in the modified SFM. In simulation studies,
+we compared the proposed method with baseline methods,
+demonstrating higher pedestrian path smoothness and reduced
+effort in evading motion, thereby improving human comfort.
+Index Terms—Mobile Robots, Socially-aware Navigation,
+Dynamical Systems based Control, Social Force Model, Collision
+Avoidance
+I. I NTRODUCTION
+With the increasing demand for service and assistive
+robots, it becomes essential for these robots to navigate in
+a socially-acceptable manner. While safety is the primary
+concern during robot navigation around humans, human
+psychological aspects should be considered to enhance human
+acceptance of mobile robots, necessitating the development of
+Socially-aware Navigation (SAN). Recent survey works [1],
+[2] indicate that integrating human-robot interaction (HRI) into
+robot motion planning is crucial for SAN.
+Existing approaches to SAN can be broadly categorized
+into learning-based and rule-based methods. Learning-based
+methods leverage machine learning-based techniques to model
+HRI. For example, in deep learning based methods [3], [4],
+reward functions that encode socially-aware terms are used to
+train the robot control policy. The trained models can capture
+complex and stochastic pedestrian behavior, but successful
+training requires large and diverse datasets or simulators that
+generate human trajectories using rule-based approaches [3],
+and the lack of interpretability of the resulting model makes
+it difficult to explicitly study the collision avoidance behavior.
+Rule-based approaches model HRI through predefined rules
+and integrate them into traditional navigation algorithms.
+Proxemics theory [5] is one of the popular concepts of
+social norm that studies human spatial behavior in social
+contexts. In robotics, to respect social distance, the proxemic
+zone is often modeled using potential functions, and an
+optimization-based method is applied to find a suitable robot
+trajectory, such as A* [6] or Timed Elastic Band [7]. Many
+navigation frameworks based on proxemics focus on scenarios
+where humans are stationary, and the computational speed
+of optimization methods may be insufficient for dynamic
+situations.
+The Social Force Model (SFM) [8] is another widely studied
+method that models interactions between pedestrians and their
+environment as interaction forces. In [9], SFM has been
+extended to incorporate interaction between human and robot,
+and the force parameters are identified using experiment data.
+[10] utilize the geometrical information of the environment to
+calculate a preferred gap for robot navigation and incorporate
+it into the SFM. [11] extended SFM with the robot’s physical
+touch force to interact with the humans to solve the freezing
+robot problem. The challenge of deploying SFM to robots
+lies in the necessity of carefully calibrating hand-designed
+parameters to accommodate different scenarios [9]. Moreover,
+while SFM implicitly reflects safety distance through repulsive
+force, it does not inherently guarantee collision avoidance [12].
+Recently, SFM-based HRI models have been embedded into
+various frameworks for socially-aware navigation, such as A*
+[12], RRT [13] and dynamic window approach [11].
+We propose the Social-DSC, a novel framework combining
+the principles of SFM with Dynamical Systems based Control
+(DSC). DSC is a closed-form approach for robot collision
+avoidance, which ensures safety and convergence to goal
+positions [14], [15]. The capability of DSC for collision
+avoidance has been qualitative evaluated in pedestrian-rich
+environments [14], [16]. Notably, our work extends DSC by
+incorporating SFM to influence the robot motion, and we
+evaluate the proposed framework by comparing it with the
+baseline methods in SAN. To our knowledge, the application
+of DSC in the SAN context has not been previously studied.
+This paper is organized as follows. Section III covers the
+problem setup and the preliminaries of the DSC collision
+avoidance. Section IV introduces the proposed Social-DSC
+method. Section V presents our simulation results and Section
+VI concludes with remarks.
+IECON 2024 - 50th Annual Conference of the IEEE Industrial Electronics Society | 978-1-6654-6454-3/24/$31.00 ©2024 IEEE | DOI: 10.1109/IECON55916.2024.10905578
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+
+II. N OTATIONS
+f (a; b) denotes a function of variable a and parameter b. For
+a 2D vector w = [wx, wy]T , we redefine the atan2 function
+with the vector as the input: atan2(w) = atan2( wy, wx).
+⟨w, v⟩ denotes the dot product of vectors w and v. The cross
+product of two 2D vectors a = [ ax, ay]T , b = [ bx, by]T is
+defined as a × b = axby − bxay.
+III. B ACKGROUND
+A. Problem Statement
+Consider a mobile robot r, which follows its nominal
+dynamics f (ξr) : R2 7→ R2 to accomplish a navigation task:
+˙ξr = f (ξr) (1)
+where ξr(t) ∈ R2 denotes the robot position at time t.
+We assume that there is a high-level trajectory planner that
+calculates the nominal dynamics f (ξr) for the robot to guide it
+towards the navigation goal point in the absence of pedestrians.
+When encountering unexpected obstacles and pedestrians,
+the robot should replan its motion while keeping the motion
+as close as possible to the nominal dynamics. By means of
+the DSC based collision avoidance algorithm [14], the robot
+control input can be computed as
+˙ξr = M (ξr)f (ξr) (2)
+where M (ξr) ∈ R2×2 denotes the modulation matrix,
+detailed in Section III-B. However, DSC depends solely on
+the geometric relationships between nominal dynamics and
+the obstacle shapes. In addition, social awareness needs to
+be considered to avoid human discomfort. This work aims to
+develop an algorithm that adapts the nominal dynamics f (ξr)
+in Eq. 1, ensuring both safety and human comfort.
+B. The DSC based Collision Avoidance
+The safety zone around a static obstacle are described using
+common convex shapes, such as circle, ellipse or rectangular.
+For pedestrians, the proxemics theory is used to model the
+proxemic zone, see Fig. 1a and Section IV-A. Denote subscript
+⋆ ∈ {o, p} to represent an obstacle o or a pedestrian p. Within
+the DSC framework, the obstacle safety zones and pedestrian
+proxemic zones can be described by the distance function
+Γ⋆(ξ) : R2 7→ R>0:
+Γ⋆(ξ) =
+ ∥ξ − ξ⋆∥
+R(ξ)
+2
+, ∀ξ ̸= ξ⋆ (3)
+where ξ⋆ is the position of the obstacle 1 R(ξ) is the local
+radius, defined as the distance from ξ⋆ to the obstacle
+boundary point where Γ⋆(ξ) = 1 , measured in the direction
+of ˜ξ = ξ − ξ⋆(see Fig. 1b). Formally, the obstacle boundary
+is defined by the set X b⋆ = {ξ ∈ R2 : Γ ⋆(ξ) = 1 }, and
+the boundary divides the space into two regions: the points
+exterior to the boundary X e⋆ = {ξ ∈ R2 : Γ⋆(ξ) > 1} and the
+points inside the boundary X i⋆ = {ξ ∈ R2 : Γ⋆(ξ) < 1}. For
+1Due to the unified modeling of proxemic zones and obstacles using Eq.
+3, we refer to both as ’obstacle’.
+clarity, we will hereafter omit the subscript ⋆ of the variables
+when the context is clear.
+(a)
+ (b)
+Fig. 1: (a) Modeling of proxemic zone around a pedestrian
+using the equipotential contour of the asymmetric Gaussian
+potential field, parameterized by the variances σi,h, σi,l, σi,r.
+(b) Construction of the basis matrix. The solid black curve
+represents the boundary of the proxemic zone around the
+pedestiran i, and the dashed black arc shows a part of the
+level line of Γ(ξr). The grey lines are the tangents evaluated
+at robot position.
+For the robot at position ξr ∈ Xe, following the nominal
+dynamics f (ξr) and encountering an obstacle described by
+Γ(ξ), the normal vector n(ξr) to the boundary of Γ(ξr) can
+be calculated by normalizing the gradient of Γ(ξr). A tangent
+vector e(ξr) can be defined to form an orthogonal basis matrix
+E(ξr) with n(ξr) at point ξr (see Fig. 1b).:
+E(ξr) =
+n(ξr), e(ξr) (4)
+The modulation matrix in Eq. 2 is obtained as
+M (ξr) = E(ξr)D(ξr)E(ξr)−1 (5)
+D(ξr) = diag(λn(ξr), λe(ξr)) (6)
+Eq. 5 and 6 explain the concept of DSC: the nominal
+dynamics f (ξr) is first transformed into the basis frame
+established by E(ξr), then modulated by the eigenvalues of
+the matrix D(ξr) along the normal and tangential directions.
+Finally, the modulated velocity is transformed to the world
+frame. Collision avoidance is achieved by ensuring that the
+eigenvalue λn(ξr) vanishes at the boundary point [14]. The
+eigenvalues can be designed as
+λn(ξr) = λv + (1 − λv)(1 − 1Γ(ξr) ) (7)
+λe(ξr) = λv + (1 − λv)(1 + 1Γ(ξr) ) (8)
+λv(ξr, vr; ξ⋆, v⋆) = 11 + exp(−10 ⟨vr − v⋆, ξr − ξ⋆⟩) (9)
+where λv is a sigmoid function to negate the ”tail effect”,
+as discussed in [15]. When the robot approaches the obstacle,
+λv ≈ 0, allowing modulation to take effect. When robot moves
+away from the obstacle, λv ≈ 1, causing the modulation
+matrix to become an identity matrix. This ensures that the
+robot does not conform to the shape of the obstacle when
+moving away, thereby maintaining a natural and efficient
+motion.
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+
+IV. T HE SOCIAL -DSC M ETHOD
+Fig. 2: Overview of the proposed Social-DSC framework.
+Green blocks represent the content proposed in this work.
+Orange blocks represent environment information. Blue blocks
+are outside the scope of this work.
+Figure 2 shows the architecture of the proposed Social-DSC
+method. The input to the Social-DSC is the nominal dynamics
+f (ξr), determined by the Global Planner block. Inspired by
+the formulation in [15], the Social-DSC is given as:
+˙ξr = Msaf ety(ξr) (f (ξr) + fSIM (ξr)) (10)
+The concept of Social-DSC can be explained as the following
+steps. First, the modulation matrice Msaf ety(ξr) is computed
+for individual obstacles and the proxemic zones of pedestrians
+(Section IV-B). Then, an additional dynamics fSIM (ξr)
+is generated by the Social Inference Model block which
+generates a velocity vector that guides the robot’s movement
+in a manner that aligns with social behaviors (Section IV-C).
+Finally, the Eq. 10 is applied to ensure that the resulting motion
+avoids collisions with obstacles and maintains a socially
+acceptable distance from pedestrians.
+A. Modeling of Human Proxemic Zone
+To integrate human spatial behavior into DSC framework,
+we utilize the proxemics theory, which formalizes the space
+around a pedestrian into four zones: intimate zone, personal
+zone, social zone and public zone [5]. The social zone refers
+to the distance that people maintain during social interactions
+to respect for personal space. In [17], this zone is defined to
+range from 1.22m to 3.66m for human-robot interaction.
+We model the proxemic zone of pedestrian i as an equi-
+potential contour of the asymmetric Gaussian potential field
+[18] fag,i(ξr; ξp,i, θp,i, σi,h, σi,l, σi,r) : R2 7→ R>0 (Fig. 1a).
+The parameters ξp,i, θp,i denote the position and orientation of
+the pedestrian, and σi,h, σi,l, σi,r are the variances along the
+heading, lateral and rear directions, respectively. The proxemic
+zone is defined as the region bounded by the level line
+fag,i(ξp,i + σi,hu(θp,i)). To balance between robot motion
+efficiency and human comfort, we empirically choose the
+values of the variances so that the contour shape represents
+the personal zone defined in [17], ensuring that the minimum
+distance between the robot and pedestrians ranges between
+1.22m and 3.66m (see Section V). The contour shape is
+intuitively convex. 2
+B. Multiple Obstacles
+Consider there are N obstacles, the overall modulation
+matrix Msaf ety(ξr) is obtained as the weighted sum of the
+individual modulation matrices Mi(ξ):
+Msaf ety(ξr) =
+NX
+i=1
+ωi(ξr)Mi(ξr) (11)
+ωi(ξr) = ω′i(ξr)PN
+j=1 ω′j(ξr) (12)
+ω′i(ξr) =
+NY
+j=1,j̸=i
+(Γi(ξr) − 1) (13)
+The weighting factors can be interpreted as follows. When the
+robot is on the boundary of obstacle i, the parameters ω′j(ξ)
+for other obstacles j ̸= i become 0. As a result, the influences
+from other obstacles j ̸= i vanish, and only Mi is active to
+ensure the impenetrability on obstacle i.
+C. Social Inference Model
+The Social Inference Model (SIM) leverages the principle
+of Social Force Model (SFM), which characterizes interactions
+between humans and objects in the environment through
+attractive and repulsive forces:
+fSIM = kSIM
+FSIM
+∥FSIM ∥ (14)
+FSIM = ωpaFpa + ωppFpp + ωsrFsr (15)
+where kSIM is a scaling parameter, ωpa, ωpp and ωsr are the
+weighting parameters. The forces Fpa, Fpp, Fsr are the forces
+representing the robot’s intentions to engage in pedestrian
+avoidance, to ensure priority of pedestrian and to follow social
+rules, respectively. Note that while traditional SFM-based
+approaches apply the resulting force directly to the robot, SIM
+instead outputs a reference direction of velocity that represents
+the robot’s intent to navigate around pedestrians.
+1) Pedestrian Avoidance: The influence of the pedestrian i
+on the robot r can be formulated as a repulsive force:
+fpa,i = Ap,i exp( dp,i − ∥˜ξi∥Bp,i ) ˜ξi∥ ˜ξi∥ (16)
+˜ξi = ξr − ξp,i (17)
+where Ap,i, Bp,i, dp,i are the parameters of the forces. For
+multiple pedestrians, the influence of P pedestrians can be
+formulated as the sum of the individual forces:
+Fpa =
+PX
+i=1
+fpa,i (18)
+2We provide an intuitive introduction to the asymmetric Gaussian function,
+and suggest the readers to refer to [18] for details.
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+
+Fig. 3: Social Inference Forces. The red dashed curve
+represents the nominal dynamics the robot should follow.
+Dashed lines indicate the interactions between the robot and
+the pedestrian and the obstacle.
+2) Pedestrian Priority: It has been found out that human
+attempt to minimize effort in evading motion [18]. Moreover,
+robots can cause discomfort if they obstruct human’s path. We
+use the guidance force Fpp to steer the robot in a way that
+reduces interference and effort for the pedestrian.
+Assume there are O obstacles obstructing the path between
+robot r and pedestrian i, the inference force fpp,i,j regarding
+obstacle j and the total force Fpp can be formulated as
+fpp,i =
+MX
+j
+αr,i(ξj; L)Ao,j exp( do,j − ∥˜ξj∥Bo,j ) − ˜ξj∥ ˜ξj∥ (19)
+where where Ao,j, Bo,j, do,j are the parameters of the forces,
+˜ξj = ξr − ξo,j. The activation function αr,i(ξj; L) equals 1
+when the obstacle lies within the rectangular formed by the
+central line segment connecting ξr and ξi with a width of L,
+and 0 otherwise. For multiple pedestrians, the total force is
+calculated as:
+Fpp =
+PX
+i=1
+fpp,i (20)
+The definition of Fpp diverges from conventional SFM,
+where forces typically act repulsively to maintain distance
+between the robot and obstacles. However,it’s worth noting
+that due to the activation function, the force diminishes as
+the pedestrian moves away from the robot, and the collision
+avoidance against obstacles is assured by the DSC framework.
+3) Social Rules: Pedestrians tend to follow conventional
+social rules to avoid collision. For example, in Europe, people
+tend to walk on the right-hand side of pathways and corridors.
+In addition, social conventions need not be considered when
+the robot is positioned too far to the pedestrian’s right-hand
+side. Authors in [10], [13] have proposed different forms of
+social forces for social rule. In this work, we use the sigmoid
+function to model the social rule force regarding pedestrian i:
+fsr,i = ksr,inv,i,L
+1 + exp
+
+−Bsr,iλr(nv,h, ˜ξi)
+ (21)
+λr(nv,i, ˜ξi) = nv,i × ˜ξi − δi (22)
+where ksr,i, Bsr,i are the parameters of the sigmoid function,
+nv,i = vi/∥vi∥ is the unit vector of pedestrian velocity, nv,i,L
+is the unit left normal vector to nv,i. In Eq. 22, we use the
+cross product to indicates whether the robot is on the left
+or right hand side of the pedestrian, and use the offset δi
+to horizontally shift the sigmoid function, so that the robot
+considers the social convention when it is not too far away to
+the pedestrian’s right-hand side.
+V. S IMULATION AND EVALUATION
+We conducted simulations in ROS using pedsim ros
+package [19], where the simulated pedestrians are driven by
+SFM to interact with obstacles, other pedestrians and the robot.
+We compare Social-DSC with DSC and baseline rule-based
+methods in SAN: SFM [9], ORCA [20]. An omni-directional
+mobile robot simulator is used for the evaluation. The
+simulations are conducted on a PC with an Intel i7-6820HQ
+CPU and 16GB RAM.
+Fig. 4: Visualization of Simulation in Rviz. Pedestrian is
+shown as blue cubic, robot is shown as grey block. Red square
+represents the robot goal position, green area represent the
+safety zone of obstacles and walls. Green curve shows the
+forward simulation of robot trajectory using Social-DSC.
+A. Simulation Setup
+The robot reference velocities are set to vr,ref = 1.2m/s,
+the controllers’ sampling time is 0.1s. The SFM controller
+adopts the identified parameters in [9] for human-robot
+interaction, and we empirically set Ao,i = 1 to reduce obstacle
+influences, while keeping other parameters for obstacle the
+same as human model. For the ORCA controller, the prediction
+time horizon is 2s. The radii of robot and pedestrian are set
+to 0.4m and 1m, respectively, and the robot takes half of
+the responsibility for collision avoidance. For the DSC, the
+nominal dynamics is f (ξr) = (ξ∗ − ξr), where ξ∗ is a static
+target position. Based on [18], the parameters are adjusted to
+σh = ∆T ∥vi∥ , σr = 12 σh, where ∥vp∥ = 1.2m/s, ∆T = 2s
+are the estimated average pedestrian speed and prediction time,
+respectively. σl is set to 1.2m due to the narrow corridor
+environment. The Social-DSC uses the same DSC and SFM
+parameters. kSIM is set to 0.3, ksr,i = 1 and δi = 0.2. The
+SIM forces are equally weighted.
+The controllers are evaluated in two scenarios: a narrow
+corridor collision avoidance and a four-agent position-
+swapping task. In each scenario, agents travel from its start
+to goal position, with 100 simulation iterations conducted.
+Pedestrians are driven by default SFM parameters in
+pedsim ros, and are randomly spawned within a 1m2 area
+around their initial positions at each iteration. Their velocities
+are also randomly assigned between 0.26m/s and 1.34m/s
+by default in pedsim ros.
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+
+B. Metrics
+1) Safety Distance during Interaction ( SD): The minimum
+distance during interaction is measured when the pedestrian is
+directly in front of the robot and moving towards it.
+2) Path Smoothness ( P S): We use Path Smoothness P Sto
+assess the naturalness of motion. A higher P Sindicates that
+the motion contains less sharp turns or large detours. Given the
+recorded path Ξ = {ξ(1), . . . ,ξ(N )} , the P Sis calculated
+as S = 1PN
+i=1 κi
+, where κi is the curvature at data point ξ(i).
+3) Path Length Ratio ( P R): The path length ratio ( P R)
+quantifies the effort required by pedestrians and robots to avoid
+each other: P R= DactualDref , where Dref is the straight-linedistance between the start and end positions, and Dactual is
+the actual path length recorded in simulation.
+C. Simulation Results and Analysis
+1) Narrow Corridor Scenario: We simulate a 20m × 4m
+area of our office floor to investigate human-robot interaction
+in a reduced-scale, enabling focused study of the local motion
+planners. The pedestrian and the robot travel in opposite
+directions, starting from opposite ends and aiming to reach the
+other side. A pillar blocks the path, making it uncomfortable
+for more than one person to traverse at the same time.
+(a) SFM
+ (b) DSC
+(c) ORCA
+ (d) Social-DSC
+Fig. 5: A set of recorded paths in the corridor simulation. The
+larger and smaller markers represent the trajectory of the robot
+and the pedestrian, respectively. The black lines represent the
+walls and and rectangle shows the pillar on the path.
+Fig. 5 shows representative trajectories produced by
+different controllers. One can see that the pedestrian motion
+is smoother when the robot is controlled by SFM and
+Social-DSC. For ORCA, the robot’s trajectory is unnatural
+because the pedestrian does not align with the assumptions
+made by ORCA. The metrics are visualized as box plots in
+Fig. 6. In Fig. 6a, SFM and DSC have smaller SD values,
+while ORCA and Soical-DSC maintain an appropriate social
+distance of 1.4m. For SFM, the reaction forces are scaled
+using exponential functions, which primarily manifest when
+the robot is in close proximity to pedestrians. Similarly, DSM
+comes into effect near the boundary of the proxemic zone due
+to the quadratic scaling of the eigenvalues. The higher SDs
+h
+TABLE I: Mean Values of the Metrics in Four Agent Scenario
+Statistic SFM DSC ORCA Social-DSC
+Pedestrian 1 1.39 1.30 1.75 1.50
+Pedestrian 2 2.28 1.11 1.67 1.26
+Pedestrian 3 2.34 1.21 1.79 1.62
+(a) Minimum Distance to Robot SD
+Statistic SFM DSC ORCA Social-DSC
+Pedestrian 1 2.81 2.40 2.43 2.94
+Pedestrian 2 7.72 5.07 3.28 5.11
+Pedestrian 3 8.05 5.01 2.96 6.50
+Robot 2.11 1.48 0.59 6.00
+(b) Path Smoothness P S
+Statistic SFM DSC ORCA Social-DSC
+Pedestrian 1 1.14 1.13 1.16 1.12
+Pedestrian 2 1.11 1.11 1.11 1.10
+Pedestrian 3 1.12 1.11 1.13 1.11
+Robot 1.14 1.11 1.35 1.11
+(c) Path Ratio P R
+of ORCA and Social-DSC result from the predictive nature of
+ORCA and the additional SIM dynamics of Social-DSC.
+Fig. 6b compares the P S of the simulated path for
+pedestrians and robot. Compared to the pedestrians, the robot
+yields generally lower P S, primarily because of the need
+for larger turning maneuvers around the pillar. Both DSC
+and Social-DSC yield larger P S, because the evading motion
+depends on the geometric description of obstacles. SFM has
+lower P Svalue due to the repulsive nature of the force model.
+Fig. 6c shows that Social-DSC yield lower pedestrian P R
+while a higher robot P R, which means the robot takes more
+responsibility in the evading motion. The Path Ratios of
+ORCA and Social-DSC show that the robot contributes more
+compared to SFM and DSC, owning to the modeling of the
+reciprocal behavior. Again, ORCA yields higher pedestrian
+P R, potentially due to pedestrians not adhering to the same
+reciprocal assumption, leading to trajectory oscillations.
+2) F our Agent Position Swapping: In this scenario, three
+pedestrians and a robot are evenly distributed on a circle with
+a radius of 10m, as shown in Fig. 7. Their goal is to traverse to
+the opposite side of the circle. The mean values of the metrics
+are summarized in Table I.
+Table IIa shows that all the controllers are capable of
+maintaining an acceptable social distance during interaction.
+The Social-DSC yields a larger SD compared to DSC,
+attributed to the additional evasive maneuvers provided by the
+SIM module, which considers social awareness.
+The P Rin Table IIc indicate that in this scenario, both
+pedestrians and the robot exert comparable effort to avoid each
+other, while robot controlled by ORCA has larger detours, as
+illustrated in Fig. 7c. This observation is further supported
+by Table IIb, where the Social-DSC demonstrates better robot
+P S, leading to similar conclusions as drawn in the corridor
+scenario.
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+
+(a) Minimum Distance During
+Interaction SD
+(b) Path Smoothness P S
+ (c) Path Ratio P R
+Fig. 6: Evaluations of metrics in the Corridor Scenario
+(a) SFM
+ (b) DSC
+(c) ORCA
+ (d) Social-DSC
+Fig. 7: A set of recorded paths in the Four Agent Swapping
+scenario. The larger and smaller markers represent the
+trajectory of the robot and the pedestrian, respectively.
+VI. C ONCLUSION AND OUTLOOKS
+In this paper, we present the Soical-DSC, a novel approach
+that combines the DSC with the SFM to generate safe and
+socially-aware robot trajectories. Compared to the baseline
+methods, our approach generates robot motions that explicitly
+consider the social distance. The proposed method enhances
+human comfort, as evidenced by the higher smoothness of
+human paths and a lower path ratio. Future work involve
+conducting real-world experiments and incorporating adaptive
+behaviors to enhance the interaction model.
+REFERENCES
+[1] C. Mavrogiannis, F. Baldini, A. Wang, D. Zhao, P. Trautman,
+A. Steinfeld, and J. Oh, “Core challenges of social robot navigation:
+A survey,” ACM Transactions on Human-Robot Interaction , 2023.
+[2] P. T. Singamaneni, P. Bachiller-Burgos, L. J. Manso, A. Garrell,
+A. Sanfeliu, A. Spalanzani, and R. Alami, “A survey on socially aware
+robot navigation: Taxonomy and future challenges,” The International
+Journal of Robotics Research , 2024.
+[3] M. F. Everett, “Algorithms for robust autonomous navigation in
+human environments,” Ph.D. dissertation, Massachusetts Institute of
+Technology, 2020.
+[4] R. Bhaskara, M. Chiu, and A. Bera, “Sg-lstm: Social group lstm for
+robot navigation through dense crowds,” in 2023 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS) , 2023.
+[5] E. T. Hall and E. T. Hall, The hidden dimension . Anchor, 1966.
+[6] M. Daza, D. Barrios-Aranibar, J. Diaz-Amado, Y . Cardinale, and
+J. Vilasboas, “An approach of social navigation based on proxemics for
+crowded environments of humans and robots,” Micromachines, 2021.
+[7] T. D. Ngo, X.-T. Truong et al. , “Socially aware robot navigation
+framework: Where and how to approach people in dynamic
+social environments,” IEEE Transactions on Automation Science and
+Engineering, 2022.
+[8] D. Helbing and P. Molnar, “Social force model for pedestrian dynamics,”
+Physical review E , 1995.
+[9] G. Ferrer, A. G. Zulueta, F. H. Cotarelo, and A. Sanfeliu, “Robot
+social-aware navigation framework to accompany people walking
+side-by-side,” Autonomous robots, 2017.
+[10] A. K. Reddy, V . Malviya, and R. Kala, “Social cues in the autonomous
+navigation of indoor mobile robots,” International Journal of Social
+Robotics, 2021.
+[11] M. Kamezaki, Y . Tsuburaya, T. Kanada, M. Hirayama, and S. Sugano,
+“Reactive, proactive, and inducible proximal crowd robot navigation
+method based on inducible social force model,” IEEE Robotics and
+Automation Letters, 2022.
+[12] H. Kivrak, F. Cakmak, H. Kose, and S. Yavuz, “Waypoint based path
+planner for socially aware robot navigation,” Cluster Computing , 2022.
+[13] M. Henderson and T. D. Ngo, “Rrt-smp: Socially-encoded motion
+primitives for sampling-based path planning,” in30th IEEE International
+Conference on Robot & Human Interactive Communication , 2021.
+[14] L. Huber, J.-J. Slotine, and A. Billard, “Avoiding dense and dynamic
+obstacles in enclosed spaces: Application to moving in crowds,” IEEE
+Transactions on Robotics , 2022.
+[15] M. Koptev, “Implicit distance functions: Learning and applications in
+robotics,” Ph.D. dissertation, ´Ecole Polytechnique F ´ed´erale de Lausanne
+(EPFL), 2023.
+[16] D. Paez-Granados, V . Gupta, and A. Billard, “Unfreezing social
+navigation: Dynamical systems based compliance for contact control
+in robot navigation,” in 2022 International Conference on Robotics and
+Automation (ICRA) , 2022.
+[17] Z. Henkel, C. L. Bethel, R. R. Murphy, and V . Srinivasan, “Evaluation
+of proxemic scaling functions for social robotics,” IEEE Transactions
+on Human-Machine Systems , 2014.
+[18] R. Kirby, Social robot navigation . Carnegie Mellon University, 2010.
+[19] B. Okal and K. O. Arras, “Towards group-level social activity
+recognition for mobile robots,” in IROS Assistance and Service Robotics
+in a Human Environments Workshop , 2014.
+[20] J. Van Den Berg, S. J. Guy, M. Lin, and D. Manocha, “Reciprocal n-body
+collision avoidance,” in Robotics Research: The 14th International
+Symposium ISRR , 2011.
+Authorized licensed use limited to: Universitas Brawijaya. Downloaded on October 21,2026 at 12:26:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE ---
+

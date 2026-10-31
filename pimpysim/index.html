@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sim – SDSC Omniwheel Avoidance Simulator</title>
+  <meta name="description" content="Real-time Social Force Model avoidance simulation for the SDSC Omniwheel robot. Drag humans, drive with WASD, tune SFM parameters. Record and export CSV log data." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-badge">
+        <span class="logo-icon">⬡</span>
+        <div>
+          <h1 class="logo-title">Sim</h1>
+          <p class="logo-sub">SDSC Omniwheel Avoidance Simulator</p>
+        </div>
+      </div>
+    </div>
+    <div class="header-center">
+      <div class="status-pill" id="zoneIndicator">
+        <span class="status-dot" id="zoneDot"></span>
+        <span id="zoneText">PUBLIC</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-stats">
+        <div class="stat-chip">
+          <span class="stat-label">Humans</span>
+          <span class="stat-val" id="humanCount">0</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-label">Dist</span>
+          <span class="stat-val" id="closestDist">—</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-label">F_rep</span>
+          <span class="stat-val" id="forceVal">0.0 N</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-label">Speed</span>
+          <span class="stat-val" id="speedVal">0%</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-layout">
+    <!-- Left sidebar: Controls -->
+    <aside class="sidebar sidebar-left">
+      <section class="panel">
+        <h2 class="panel-title">
+          <span class="panel-icon">🎮</span> Controls
+        </h2>
+        <div class="control-hint">
+          <div class="key-grid">
+            <div class="key-row">
+              <span></span><kbd>W</kbd><span></span>
+            </div>
+            <div class="key-row">
+              <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+            </div>
+            <p class="key-desc">Drive robot</p>
+          </div>
+          <ul class="hint-list">
+            <li><kbd>Click</kbd> arena → place human</li>
+            <li><kbd>Drag</kbd> human → reposition</li>
+            <li><kbd>Right-click</kbd> human → remove</li>
+            <li><kbd>Space</kbd> → stop robot</li>
+            <li><kbd>C</kbd> → clear all humans</li>
+            <li><kbd>R</kbd> → reset robot</li>
+          </ul>
+        </div>
+
+        <!-- Mode toggle -->
+        <div class="toggle-group" id="modeGroup">
+          <button class="toggle-btn active" id="btnDrive" onclick="setMode('drive')">
+            🕹️ Drive
+          </button>
+          <button class="toggle-btn" id="btnAuto" onclick="setMode('auto')">
+            🤖 Autonomous
+          </button>
+        </div>
+        <p class="mode-desc" id="modeDesc">Keyboard drives the robot. SFM modulates velocity.</p>
+      </section>
+
+      <!-- ── Human Motion Panel ─────────────────────────────── -->
+      <section class="panel panel-motion">
+        <h2 class="panel-title">
+          <span class="panel-icon">🚶</span> Human Motion
+        </h2>
+        <p class="rec-hint">Make all humans walk in a fixed direction. New humans inherit the current direction.</p>
+
+        <!-- D-pad -->
+        <div class="dpad-wrap">
+          <div class="dpad">
+            <button class="dpad-btn dpad-up"    id="dirBtn_up"    onclick="setHumanDir('up')"    title="Walk up (North)">↑</button>
+            <button class="dpad-btn dpad-left"  id="dirBtn_left"  onclick="setHumanDir('left')"  title="Walk left (West)">←</button>
+            <button class="dpad-btn dpad-stop"  id="dirBtn_stop"  onclick="setHumanDir('stop')"  title="Stop all humans">■</button>
+            <button class="dpad-btn dpad-right" id="dirBtn_right" onclick="setHumanDir('right')" title="Walk right (East)">→</button>
+            <button class="dpad-btn dpad-down"  id="dirBtn_down"  onclick="setHumanDir('down')"  title="Walk down (South)">↓</button>
+          </div>
+        </div>
+
+        <!-- Walk speed slider -->
+        <label class="slider-label" style="margin-top:10px">
+          <span>Walk speed</span>
+          <span class="slider-val" id="valHumanSpeed">0.6 m/s</span>
+        </label>
+        <input type="range" id="slHumanSpeed" min="0.1" max="2.0" step="0.1" value="0.6"
+               oninput="setHumanWalkSpeed(this.value)" />
+
+        <!-- Edge behaviour -->
+        <p class="slider-section" style="margin-top:10px">— Edge behaviour —</p>
+        <div class="toggle-group" style="margin-top:4px">
+          <button class="toggle-btn active" id="btnBounce" onclick="setEdgeBounce(true)">⬛ Bounce</button>
+          <button class="toggle-btn"        id="btnWrap"   onclick="setEdgeBounce(false)">🔁 Wrap</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">
+          <span class="panel-icon">⚙️</span> Social-DSC Parameters
+        </h2>
+        <p style="font-size:10px;color:#4a5a78;margin-bottom:10px">Chen &amp; Liu, IECON 2024</p>
+        <div class="slider-group">
+
+          <p class="slider-section">— Proxemic Zones —</p>
+          <label class="slider-label">
+            <span>Intimate radius</span>
+            <span class="slider-val" id="valRI">0.45 m</span>
+          </label>
+          <input type="range" id="slRI" min="0.1" max="1.0" step="0.05" value="0.45" oninput="updateParam('RI', this.value)" />
+
+          <label class="slider-label">
+            <span>Personal radius</span>
+            <span class="slider-val" id="valRP">1.20 m</span>
+          </label>
+          <input type="range" id="slRP" min="0.5" max="2.5" step="0.05" value="1.20" oninput="updateParam('RP', this.value)" />
+
+          <label class="slider-label">
+            <span>Social radius</span>
+            <span class="slider-val" id="valRS">3.60 m</span>
+          </label>
+          <input type="range" id="slRS" min="1.0" max="6.0" step="0.1" value="3.60" oninput="updateParam('RS', this.value)" />
+
+          <p class="slider-section">— Asymmetric Zone Shape —</p>
+          <label class="slider-label">
+            <span>σ_h (ahead)</span>
+            <span class="slider-val" id="valSH">2.40 m</span>
+          </label>
+          <input type="range" id="slSH" min="0.5" max="5.0" step="0.1" value="2.40" oninput="updateParam('sigma_h', this.value)" />
+
+          <label class="slider-label">
+            <span>σ_l (lateral)</span>
+            <span class="slider-val" id="valSL">1.20 m</span>
+          </label>
+          <input type="range" id="slSL" min="0.3" max="3.0" step="0.1" value="1.20" oninput="updateParam('sigma_l', this.value)" />
+
+          <p class="slider-section">— SIM: F_pa Avoidance —</p>
+          <label class="slider-label">
+            <span>A_p (amplitude)</span>
+            <span class="slider-val" id="valAp">2.0 N</span>
+          </label>
+          <input type="range" id="slAp" min="0.1" max="10" step="0.1" value="2.0" oninput="updateParam('Ap', this.value)" />
+
+          <label class="slider-label">
+            <span>B_p (range)</span>
+            <span class="slider-val" id="valBp">0.80 m</span>
+          </label>
+          <input type="range" id="slBp" min="0.1" max="3.0" step="0.05" value="0.80" oninput="updateParam('Bp', this.value)" />
+
+          <p class="slider-section">— SIM: F_sr Social Rule —</p>
+          <label class="slider-label">
+            <span>k_sr (strength)</span>
+            <span class="slider-val" id="valKsr">1.00</span>
+          </label>
+          <input type="range" id="slKsr" min="0" max="3" step="0.1" value="1.0" oninput="updateParam('ksr', this.value)" />
+
+          <p class="slider-section">— SIM Global —</p>
+          <label class="slider-label">
+            <span>k_SIM (output scale)</span>
+            <span class="slider-val" id="valKSIM">0.35</span>
+          </label>
+          <input type="range" id="slKSIM" min="0.0" max="1.0" step="0.01" value="0.35" oninput="updateParam('kSIM', this.value)" />
+
+          <label class="slider-label">
+            <span>w_pa (avoidance wt)</span>
+            <span class="slider-val" id="valWpa">1.00</span>
+          </label>
+          <input type="range" id="slWpa" min="0" max="2" step="0.05" value="1.0" oninput="updateParam('wpa', this.value)" />
+
+          <label class="slider-label">
+            <span>w_pp (priority wt)</span>
+            <span class="slider-val" id="valWpp">0.50</span>
+          </label>
+          <input type="range" id="slWpp" min="0" max="2" step="0.05" value="0.5" oninput="updateParam('wpp', this.value)" />
+
+          <label class="slider-label">
+            <span>w_sr (social rule wt)</span>
+            <span class="slider-val" id="valWsr">0.50</span>
+          </label>
+          <input type="range" id="slWsr" min="0" max="2" step="0.05" value="0.5" oninput="updateParam('wsr', this.value)" />
+
+          <label class="slider-label">
+            <span>Robot speed scale</span>
+            <span class="slider-val" id="valSS">0.50</span>
+          </label>
+          <input type="range" id="slSS" min="0.1" max="1.0" step="0.05" value="0.50" oninput="updateParam('SS', this.value)" />
+        </div>
+
+        <button class="btn-ghost" onclick="resetParams()">↺ Reset defaults</button>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">
+          <span class="panel-icon">📊</span> Force Breakdown
+        </h2>
+        <div class="force-viz">
+          <canvas id="forceCanvas" width="180" height="180"></canvas>
+        </div>
+        <div class="force-legend-mini">
+          <div class="flrow"><span style="color:#ec4899">●</span> F_pa avoidance</div>
+          <div class="flrow"><span style="color:#a855f7">●</span> F_sr social rule</div>
+          <div class="flrow"><span style="color:#06b6d4">●</span> f_SIM total</div>
+        </div>
+        <div class="force-table" id="forceTable">
+          <p class="no-data">No detections</p>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Center: Arena canvas -->
+    <div class="arena-wrapper">
+      <div class="arena-toolbar">
+        <div class="toolbar-left">
+          <span class="arena-label">Arena — 10 m × 10 m</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn-sm" onclick="clearHumans()" title="Clear all humans (C)">🗑️ Clear</button>
+          <button class="btn-sm" onclick="resetRobot()" title="Reset robot position (R)">⟳ Reset</button>
+          <button class="btn-sm" id="pauseBtn" onclick="togglePause()" title="Pause simulation">⏸ Pause</button>
+        </div>
+      </div>
+      <div class="canvas-container" id="canvasContainer">
+        <canvas id="arena" width="800" height="800"></canvas>
+        <div class="canvas-hint" id="canvasHint">Click to place humans · Drag to move · Right-click to remove</div>
+      </div>
+    </div>
+
+    <!-- Right sidebar: Recording + Log + packet -->
+    <aside class="sidebar sidebar-right">
+
+      <!-- ── Recording Panel ─────────────────────────────── -->
+      <section class="panel panel-record">
+        <h2 class="panel-title">
+          <span class="panel-icon">⏺</span> Data Recording
+        </h2>
+        <p class="rec-hint">Capture telemetry to CSV for offline analysis (like BroneX plots).</p>
+
+        <button class="btn-rec" id="recBtn" onclick="toggleRecording()">⏺ Record</button>
+
+        <!-- Live status bar (hidden when not recording) -->
+        <div class="rec-status" id="recStatus" style="display:none">
+          <span class="rec-dot" id="recDot"></span>
+          <span class="rec-label">REC</span>
+          <span class="rec-counter" id="recElapsed">0s</span>
+          <span class="rec-counter" id="recCounter">0 rows</span>
+        </div>
+
+        <!-- CSV columns accordion -->
+        <details class="rec-details">
+          <summary class="rec-summary">Recorded columns (18)</summary>
+          <ul class="rec-cols">
+            <li><span class="col-tag mono">time_s</span> Simulation time (s)</li>
+            <li><span class="col-tag mono">robot_x / y</span> World position (m)</li>
+            <li><span class="col-tag mono">robot_vx / vy</span> World velocity (m/s)</li>
+            <li><span class="col-tag mono">robot_angle_deg</span> Heading (°)</li>
+            <li><span class="col-tag mono">closest_dist_m</span> Nearest human (m)</li>
+            <li><span class="col-tag mono">zone</span> INTIMATE/PERSONAL/…</li>
+            <li><span class="col-tag mono">fx_pa / fy_pa</span> F_pa avoidance (N)</li>
+            <li><span class="col-tag mono">fx_sr / fy_sr</span> F_sr social rule (N)</li>
+            <li><span class="col-tag mono">fx_sim / fy_sim</span> f_SIM total (N)</li>
+            <li><span class="col-tag mono">pkt_X / Y / W</span> ESP32 packet (0-255)</li>
+            <li><span class="col-tag mono">num_humans</span> Active humans</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">
+          <span class="panel-icon">📡</span> Packet Output
+        </h2>
+        <div class="packet-display" id="packetDisplay">
+          <span class="pkt-label">ESP32</span>
+          <code class="pkt-code" id="packetCode">&lt;127,127,127&gt;</code>
+        </div>
+        <div class="packet-breakdown">
+          <div class="pkt-bar-row">
+            <span>X (lateral)</span>
+            <div class="pkt-bar-track">
+              <div class="pkt-bar" id="barX" style="width:50%;background:var(--accent-blue)"></div>
+              <div class="pkt-center-mark"></div>
+            </div>
+            <span id="pktX">127</span>
+          </div>
+          <div class="pkt-bar-row">
+            <span>Y (forward)</span>
+            <div class="pkt-bar-track">
+              <div class="pkt-bar" id="barY" style="width:50%;background:var(--accent-green)"></div>
+              <div class="pkt-center-mark"></div>
+            </div>
+            <span id="pktY">127</span>
+          </div>
+          <div class="pkt-bar-row">
+            <span>W (angular)</span>
+            <div class="pkt-bar-track">
+              <div class="pkt-bar" id="barW" style="width:50%;background:var(--accent-purple)"></div>
+              <div class="pkt-center-mark"></div>
+            </div>
+            <span id="pktW">127</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel panel-log">
+        <h2 class="panel-title">
+          <span class="panel-icon">📝</span> Event Log
+          <button class="btn-xs" onclick="clearLog()">Clear</button>
+        </h2>
+        <div class="log-container" id="logContainer">
+          <p class="log-entry log-info">[SYS] Sim initialized</p>
+          <p class="log-entry log-info">[SYS] Click arena to add humans</p>
+          <p class="log-entry log-info">[SYS] Use WASD to drive in Drive mode</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">
+          <span class="panel-icon">🗺️</span> Legend
+        </h2>
+        <div class="legend">
+          <div class="legend-row"><span class="legend-dot" style="background:#ff4444"></span> Intimate (&lt; 0.45 m)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ff8800"></span> Personal (&lt; 1.2 m)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ffcc00"></span> Social (&lt; 3.6 m)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#00cc66"></span> Public (≥ 3.6 m)</div>
+          <div class="legend-row"><span class="legend-dot legend-robot"></span> Robot (omniwheel)</div>
+          <div class="legend-row"><span class="legend-dot legend-human"></span> Human (arrow = heading)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ec4899"></span> F_pa (avoidance)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#a855f7"></span> F_sr (social rule)</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#06b6d4"></span> f_SIM (DSC input)</div>
+          <div class="legend-row"><span style="font-size:10px;color:#4a5a78">DSC modulation matrix</span></div>
+          <div class="legend-row"><span style="font-size:10px;color:#4a5a78">bends path around humans</span></div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="sim.js"></script>
+</body>
+</html>
