@@ -36,6 +36,7 @@ Version: 2.0 - No Speed Reduction (Direction-Only SFM)
 
 import glob
 import math
+import os
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import threading
@@ -99,6 +100,12 @@ AP = 2.0    # repulsion amplitude (N)
 BP = 0.8    # repulsion range (m)
 DP = 0.0    # offset distance
 
+# Legacy SFM aliases (mencegah NameError jika ada referensi ke variabel v1)
+SFM_A = AP
+SFM_B = BP
+SFM_MASS = 5.0
+SFM_TAU = 0.5
+
 # SIM — F_sr: Social Rule Force (Eq. 21)  — right-hand traffic
 KSR = 1.0   # sigmoid gain
 BSR = 3.0   # sigmoid steepness
@@ -123,7 +130,10 @@ CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_FPS = 30
 DETECTION_RATE_HZ = 10       # Detection frequency
-YOLO_MODEL = "yolo11n.pt"    # YOLOv11 nano model
+YOLO_ENGINE_MODEL = "yolo11n.engine"  # TensorRT FP16 engine (prioritas Jetson)
+YOLO_PT_MODEL = "yolo11n.pt"          # PyTorch model (fallback / sumber export)
+YOLO_MODEL = YOLO_ENGINE_MODEL if os.path.exists(YOLO_ENGINE_MODEL) else YOLO_PT_MODEL
+YOLO_HALF = True             # Gunakan FP16 inference untuk kurangi beban GPU & Unified Memory
 YOLO_CONFIDENCE = 0.5
 MIN_DISTANCE = 0.1           # m
 MAX_DISTANCE = 10.0          # m
@@ -148,17 +158,18 @@ class HumanDetector:
         
         # Detection state
         self.detections = []
-        self.last_frame = None    # Cache frame terakhir untuk visualisasi
-        self.last_results = None  # Cache YOLO results terakhir
+        self.last_frame = None        # Cache frame terakhir untuk visualisasi
+        self.last_results = None      # Cache YOLO results terakhir
+        self.last_debug_depth = None  # Cache statistik depth untuk visualisasi (tanpa wait_for_frames di thread viz)
         self.lock = threading.Lock()
         
         # Tracking
         self.next_id = 1
         self.tracked_humans = {}  # {id: (cx, cy, last_seen_time)}
         
-        # YOLO model
-        self.logger("Loading YOLOv11 model...")
-        self.model = YOLO(YOLO_MODEL)
+        # YOLO model (prioritaskan TensorRT FP16 .engine di Jetson)
+        self.active_model_path = YOLO_MODEL
+        self.model = self._load_yolo_model()
         
         # RealSense pipeline
         self.pipeline = rs.pipeline()
@@ -180,6 +191,36 @@ class HumanDetector:
         
         self.logger(f"✅ Camera initialized: {self.intrinsics.width}x{self.intrinsics.height}")
     
+    def _load_yolo_model(self):
+        """Load TensorRT FP16 engine (.engine) jika ada, atau auto-export dari .pt di CUDA/Jetson."""
+        if os.path.exists(YOLO_ENGINE_MODEL):
+            self.logger(f"🚀 Loading TensorRT FP16 engine: {YOLO_ENGINE_MODEL}...")
+            self.active_model_path = YOLO_ENGINE_MODEL
+            return YOLO(YOLO_ENGINE_MODEL, task="detect")
+
+        if os.path.exists(YOLO_PT_MODEL):
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    self.logger(
+                        f"⚡ {YOLO_ENGINE_MODEL} belum ada. Export otomatis TensorRT FP16 dari {YOLO_PT_MODEL}..."
+                    )
+                    pt_model = YOLO(YOLO_PT_MODEL)
+                    exported_path = pt_model.export(format="engine", half=True, imgsz=640)
+                    engine_path = str(exported_path) if exported_path else YOLO_ENGINE_MODEL
+                    if os.path.exists(engine_path):
+                        self.logger(f"✅ TensorRT FP16 engine siap: {engine_path}")
+                        self.active_model_path = engine_path
+                        return YOLO(engine_path, task="detect")
+            except Exception as e:
+                self.logger(
+                    f"⚠️ Auto-export TensorRT dilewati ({e}). Fallback ke PyTorch {YOLO_PT_MODEL}."
+                )
+
+        self.logger(f"Loading YOLOv11 PyTorch model: {YOLO_PT_MODEL}...")
+        self.active_model_path = YOLO_PT_MODEL
+        return YOLO(YOLO_PT_MODEL)
+
     def pixel_to_camera_frame(self, cx, cy, depth_m):
         """Convert pixel + depth to camera frame (x, y, z)"""
         x = (cx - self.intrinsics.ppx) / self.intrinsics.fx * depth_m
@@ -241,10 +282,43 @@ class HumanDetector:
             
             frame = np.asanyarray(color_frame.get_data())
             
-            # YOLO inference (class 0 = person)
-            results = self.model(frame, classes=[0], verbose=False)
+            # YOLO inference (class 0 = person, FP16 untuk kurangi beban GPU & Unified Memory)
+            results = self.model(
+                frame,
+                classes=[0],
+                conf=YOLO_CONFIDENCE,
+                half=YOLO_HALF,
+                verbose=False,
+            )
             boxes = results[0].boxes.xyxy.cpu().numpy()
             confidences = results[0].boxes.conf.cpu().numpy()
+            
+            # Hitung statistik debug depth di sini (satu kali pada 10 Hz) agar
+            # thread visualisasi tidak perlu memanggil pipeline.wait_for_frames() lagi.
+            debug_depth = None
+            if len(boxes) > 0:
+                x1_d, y1_d, x2_d, y2_d = map(int, boxes[0][:4])
+                cx_debug = (x1_d + x2_d) // 2
+                cy_debug = (y1_d + y2_d) // 2
+                w_d, h_d = depth_frame.get_width(), depth_frame.get_height()
+                depth_center = (
+                    depth_frame.get_distance(cx_debug, cy_debug)
+                    if (0 <= cx_debug < w_d and 0 <= cy_debug < h_d)
+                    else 0.0
+                )
+                depths_around = []
+                for dy in (-20, 0, 20):
+                    for dx in (-20, 0, 20):
+                        sx, sy = cx_debug + dx, cy_debug + dy
+                        if 0 <= sx < w_d and 0 <= sy < h_d:
+                            d = depth_frame.get_distance(sx, sy)
+                            if d > 0:
+                                depths_around.append(d)
+                debug_depth = {
+                    'center': depth_center,
+                    'avg': (sum(depths_around) / len(depths_around)) if depths_around else None,
+                    'valid_count': len(depths_around),
+                }
             
             detections = []
             
@@ -315,6 +389,7 @@ class HumanDetector:
                 self.detections = detections
                 self.last_frame = frame
                 self.last_results = results[0]
+                self.last_debug_depth = debug_depth
             
             return frame, results[0]
         
@@ -331,6 +406,11 @@ class HumanDetector:
         """Get last captured frame dan YOLO results (thread-safe)."""
         with self.lock:
             return self.last_frame, self.last_results
+    
+    def get_last_debug_depth(self):
+        """Get cached depth debug statistics (thread-safe, tanpa menyentuh RealSense pipeline)."""
+        with self.lock:
+            return self.last_debug_depth.copy() if self.last_debug_depth else None
     
     def run_detection_loop(self):
         """Run detection in separate thread"""
@@ -961,11 +1041,19 @@ def update_ui(detections):
 # ══════════════════════════════════════════════════════════════════
 
 def run_visualization():
-    """Run OpenCV visualization window."""
+    """Run OpenCV visualization window.
+
+    Seluruh pembacaan frame dan statistik depth menggunakan cache dari
+    HumanDetector (get_last_frame & get_last_debug_depth) sehingga TIDAK pernah
+    memanggil detector.pipeline.wait_for_frames() atau detector.align.process()
+    dari thread visualisasi.
+    """
     if not detector:
         return
 
     frame_dt = 1.0 / CAMERA_FPS
+    last_raw_frame = None
+    cached_base_annotated = None
 
     while True:
         t_loop_start = time.time()
@@ -975,49 +1063,29 @@ def run_visualization():
             time.sleep(0.05)
             continue
 
-        if results:
-            annotated = results.plot()
-        else:
-            annotated = frame.copy()
+        # Render results.plot() hanya saat ada frame baru dari detector (10 Hz),
+        # bukan di-plot ulang 30x/detik yang memicu salinan tensor GPU/Unified Memory.
+        if frame is not last_raw_frame or cached_base_annotated is None:
+            last_raw_frame = frame
+            cached_base_annotated = results.plot() if results else frame.copy()
+
+        annotated = cached_base_annotated.copy()
 
         detections = detector.get_detections()
+        debug_depth = detector.get_last_debug_depth()
 
-        # DEBUG: Show depth frame statistics
-        if results and len(results.boxes) > 0:
-            try:
-                frames = detector.pipeline.wait_for_frames(timeout_ms=10)
-                aligned_frames = detector.align.process(frames)
-                depth_frame = aligned_frames.get_depth_frame()
-
-                if depth_frame:
-                    box = results.boxes.xyxy.cpu().numpy()[0]
-                    x1, y1, x2, y2 = map(int, box[:4])
-                    cx_debug = int((x1 + x2) / 2)
-                    cy_debug = int((y1 + y2) / 2)
-
-                    depth_center = depth_frame.get_distance(cx_debug, cy_debug)
-
-                    cv2.putText(annotated, f"DEBUG Depth@center: {depth_center:.3f}m",
-                               (10, CAMERA_HEIGHT - 60), cv2.FONT_HERSHEY_SIMPLEX,
-                               0.5, (0, 255, 255), 1)
-
-                    depths_around = []
-                    for dy in [-20, 0, 20]:
-                        for dx in [-20, 0, 20]:
-                            d = depth_frame.get_distance(cx_debug + dx, cy_debug + dy)
-                            if d > 0:
-                                depths_around.append(d)
-
-                    if depths_around:
-                        avg_depth = sum(depths_around) / len(depths_around)
-                        cv2.putText(annotated, f"DEBUG Avg depth (3x3): {avg_depth:.3f}m",
-                                   (10, CAMERA_HEIGHT - 40), cv2.FONT_HERSHEY_SIMPLEX,
-                                   0.5, (0, 255, 255), 1)
-                        cv2.putText(annotated, f"DEBUG Valid samples: {len(depths_around)}/9",
-                                   (10, CAMERA_HEIGHT - 20), cv2.FONT_HERSHEY_SIMPLEX,
-                                   0.5, (0, 255, 255), 1)
-            except Exception:
-                pass
+        # DEBUG: Show depth frame statistics (dari cache detect_once, tanpa wait_for_frames)
+        if debug_depth is not None:
+            cv2.putText(annotated, f"DEBUG Depth@center: {debug_depth['center']:.3f}m",
+                       (10, CAMERA_HEIGHT - 60), cv2.FONT_HERSHEY_SIMPLEX,
+                       0.5, (0, 255, 255), 1)
+            if debug_depth['avg'] is not None:
+                cv2.putText(annotated, f"DEBUG Avg depth (3x3): {debug_depth['avg']:.3f}m",
+                           (10, CAMERA_HEIGHT - 40), cv2.FONT_HERSHEY_SIMPLEX,
+                           0.5, (0, 255, 255), 1)
+                cv2.putText(annotated, f"DEBUG Valid samples: {debug_depth['valid_count']}/9",
+                           (10, CAMERA_HEIGHT - 20), cv2.FONT_HERSHEY_SIMPLEX,
+                           0.5, (0, 255, 255), 1)
 
         # Annotate with distance and ID
         for det in detections:
@@ -1182,7 +1250,7 @@ log_text.pack(fill="both", expand=True, padx=5, pady=5)
 
 # ── Footer ────────────────────────────────────────────────────────
 footer = tk.Label(root,
-                 text=f"Hold B{BTN_DEADMAN} to move | SFM: A={SFM_A}, B={SFM_B} | "
+                 text=f"Hold B{BTN_DEADMAN} to move | Social-DSC: Ap={AP}, Bp={BP} | "
                       f"Zones: Intimate={R_INTIMATE}m (STOP), Personal={R_PERSONAL}m, Social={R_SOCIAL}m | "
                       f"v2: NO speed reduction",
                  font=("Consolas", 8), fg="grey")
@@ -1227,8 +1295,8 @@ def initialize_system():
         log_message("🚀 MODE: Direction-Only SFM — NO speed reduction in any zone")
         log_message("🔴 SAFETY: Emergency stop STILL active in INTIMATE zone (<0.45m)")
         log_message(f"📷 Camera: {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps")
-        log_message(f"🧠 YOLO: {YOLO_MODEL}")
-        log_message(f"⚙️  SFM: A={SFM_A}N, B={SFM_B}m, τ={SFM_TAU}s")
+        log_message(f"🧠 YOLO: {detector.active_model_path} (FP16={YOLO_HALF})")
+        log_message(f"⚙️  Social-DSC: Ap={AP}N, Bp={BP}m, KSIM={KSIM}")
         log_message(f"🛡️  Zones: Intimate={R_INTIMATE}m (STOP), Personal={R_PERSONAL}m, Social={R_SOCIAL}m")
         log_message("Ready for operation!")
 

@@ -64,8 +64,15 @@ let humans = [];  // { id, x, y, angle (heading rad), speed, walkSpeed, edgeBoun
 let nextId = 1;
 
 // ── Human motion defaults ──────────────────────
-let humanWalkSpeed  = 0.6;   // m/s default for new humans
-let humanEdgeBounce = true;  // true = bounce, false = wrap-around
+let humanWalkSpeed  = 0.6;     // m/s default for new humans
+let humanEdgeBounce = true;    // true = bounce, false = wrap-around
+let humanMotionMode = 'stop';  // 'stop' | 'up' | 'down' | 'left' | 'right' | 'random'
+const HUMAN_DIRS = {
+  up:    Math.PI / 2,
+  down: -Math.PI / 2,
+  right:  0,
+  left:   Math.PI,
+};
 let trail  = [];
 
 let keys        = {};
@@ -177,9 +184,12 @@ function computeLambdaV(rx, ry, rvx, rvy, hx, hy, hvx, hvy) {
 }
 
 function computeEigenvalues(Gamma, lambdaV) {
-  const inv = 1.0 / Math.max(Gamma, 0.01);
-  const lam_n = lambdaV + (1 - lambdaV) * (1 - inv);  // Eq. 7 → 0 at boundary
-  const lam_e = lambdaV + (1 - lambdaV) * (1 + inv);  // Eq. 8 → large at boundary
+  // Clamp Gamma >= 1.0 so lam_n never goes negative inside the ellipse (Γ < 1),
+  // which would otherwise invert outward repulsive forces into inward attraction.
+  const gammaEff = Math.max(Gamma, 1.0);
+  const inv = 1.0 / gammaEff;
+  const lam_n = Math.max(0.0, lambdaV + (1 - lambdaV) * (1 - inv));  // Eq. 7 → 0 at boundary, never < 0
+  const lam_e = Math.min(2.5, lambdaV + (1 - lambdaV) * (1 + inv));  // Eq. 8 → bounded tangent boost
   return { lam_n, lam_e };
 }
 
@@ -188,7 +198,7 @@ function computeEigenvalues(Gamma, lambdaV) {
 //   M = E · D · E⁻¹   (Eq. 5-6)
 //   E = [n, e]  orthogonal basis
 // ──────────────────────────────────────────────
-function dscModulation(rx, ry, rvx, rvy, h) {
+function dscModulation(rx, ry, rvx, rvy, h, fTotalX = 0, fTotalY = 0) {
   const Gamma = gammaHuman(rx, ry, h);
 
   // Human velocity for λv computation
@@ -196,11 +206,18 @@ function dscModulation(rx, ry, rvx, rvy, h) {
   const hvy = Math.sin(h.angle) * h.speed;
 
   const lambdaV = computeLambdaV(rx, ry, rvx, rvy, h.x, h.y, hvx, hvy);
-  const { lam_n, lam_e } = computeEigenvalues(Gamma, lambdaV);
+  let { lam_n, lam_e } = computeEigenvalues(Gamma, lambdaV);
 
-  // Normal vector = normalised gradient of Γ
+  // Normal vector = normalised gradient of Γ (points outward away from human)
   const { gx, gy } = gammaGradient(rx, ry, h);
   const [nx, ny]   = norm(gx, gy);
+
+  // If desired velocity (nominal + SIM repulsion) already points outward
+  // away from the human (dot(fTotal, n) > 0), do not attenuate the normal
+  // component so repulsive escape velocity is preserved in full.
+  if (dot(fTotalX, fTotalY, nx, ny) > 0) {
+    lam_n = 1.0;
+  }
 
   // Tangent vector (90° CCW from normal)
   const ex = -ny, ey = nx;
@@ -221,11 +238,11 @@ function dscModulation(rx, ry, rvx, rvy, h) {
 // ──────────────────────────────────────────────
 // DSC: Multi-obstacle weighted modulation (Eq. 11-13)
 // ──────────────────────────────────────────────
-function combinedModulation(rx, ry, rvx, rvy, humanList) {
+function combinedModulation(rx, ry, rvx, rvy, humanList, fTotalX = 0, fTotalY = 0) {
   if (humanList.length === 0)
     return { m00: 1, m01: 0, m10: 0, m11: 1, minGamma: 999 };
 
-  const mats   = humanList.map(h => dscModulation(rx, ry, rvx, rvy, h));
+  const mats   = humanList.map(h => dscModulation(rx, ry, rvx, rvy, h, fTotalX, fTotalY));
   const Gammas = mats.map(m => m.Gamma);
   const minG   = Math.min(...Gammas);
 
@@ -234,9 +251,10 @@ function combinedModulation(rx, ry, rvx, rvy, humanList) {
     return { m00: m.m00, m01: m.m01, m10: m.m10, m11: m.m11, minGamma: minG };
   }
 
-  // ω'_i = Π_{j≠i} (Γ_j - 1)  [Eq. 13]
+  // ω'_i = Π_{j≠i} (Γ_j - base)  [Eq. 13, with adaptive base so weights never collapse to 0 when multiple Γ_j <= 1]
+  const base = Math.min(1.0, minG - 0.01);
   const omega_prime = Gammas.map((g, i) =>
-    Gammas.reduce((acc, gj, j) => j === i ? acc : acc * Math.max(gj - 1, 0), 1)
+    Gammas.reduce((acc, gj, j) => j === i ? acc : acc * Math.max(gj - base, 0.001), 1)
   );
   const sum_w = omega_prime.reduce((a, b) => a + b, 0) || 1;
   const omega  = omega_prime.map(w => w / sum_w);  // [Eq. 12]
@@ -260,8 +278,12 @@ function computeFpa(rx, ry) {
   for (const h of humans) {
     const dx = rx - h.x, dy = ry - h.y;
     const dist = hypot(dx, dy);
-    if (dist < 1e-6) { fxT += 50; continue; }
-    // Use asymmetric Γ to weight force direction
+    if (dist < 1e-6) {
+      // Push opposite to human's heading if exactly overlapping
+      fxT -= Math.cos(h.angle) * 50;
+      fyT -= Math.sin(h.angle) * 50;
+      continue;
+    }
     const mag = params.Ap * Math.exp((params.dp - dist) / params.Bp);
     fxT += mag * dx / dist;
     fyT += mag * dy / dist;
@@ -271,10 +293,9 @@ function computeFpa(rx, ry) {
 
 // ──────────────────────────────────────────────
 // SIM: F_pp – Pedestrian Priority (Eq. 19-20)
-//   Guides robot around obstacles to clear the
-//   pedestrian's straight-ahead path.
-//   Simplified: attractive force toward a point
-//   lateral to each pedestrian's path.
+//   Guides robot laterally out of the pedestrian's
+//   forward path corridor without pulling the robot
+//   closer to the pedestrian center.
 // ──────────────────────────────────────────────
 function computeFpp(rx, ry) {
   let fxT = 0, fyT = 0;
@@ -287,20 +308,18 @@ function computeFpp(rx, ry) {
     const hx = Math.cos(h.angle), hy = Math.sin(h.angle);
     const lx = -hy, ly = hx;  // 90° CCW = left-normal
 
-    // Cross product: positive = robot on pedestrian's left
-    const side = cross2d(hx, hy, dx / dist, dy / dist);
+    // Longitudinal & lateral position in pedestrian's frame
+    const dLong = hx * dx + hy * dy;
+    const dLat  = lx * dx + ly * dy;
 
-    // Steer robot toward the right-hand side of the pedestrian
-    // (attract robot to a point ~1m to pedestrian's right)
-    const targetX = h.x - lx * 1.0;  // right side = -left-normal
-    const targetY = h.y - ly * 1.0;
-    const tdx = targetX - rx, tdy = targetY - ry;
-    const tdist = hypot(tdx, tdy);
-    if (tdist < 1e-6) continue;
+    // Only apply priority clearing when robot is ahead of pedestrian
+    if (dLong <= -0.2) continue;
 
-    const mag = params.Ap * 0.5 * Math.exp((params.dp - dist) / params.Bp);
-    fxT += mag * tdx / tdist;
-    fyT += mag * tdy / tdist;
+    // Push laterally away from pedestrian's walking line (bias to right side if nearly centered)
+    const latSign = dLat >= 0.15 ? 1.0 : -1.0;
+    const mag = params.Ap * 0.35 * Math.exp((params.dp - dist) / params.Bp);
+    fxT += mag * (latSign * lx + 0.25 * dx / dist);
+    fyT += mag * (latSign * ly + 0.25 * dy / dist);
   }
   return { fxT, fyT };
 }
@@ -354,7 +373,16 @@ function computeSIM(rx, ry) {
   sfm.fx_sr  = sr.fxT; sfm.fy_sr = sr.fyT;
 
   if (mag < 0.01) return { fx: 0, fy: 0 };
-  return { fx: params.kSIM * Fx / mag, fy: params.kSIM * Fy / mag };
+
+  // Smoothly scale SIM velocity when force is small, and boost up to SS inside Personal/Intimate zone
+  const closestDist = humans.length > 0
+    ? Math.min(...humans.map(h => hypot(h.x - rx, h.y - ry)))
+    : 999;
+  const urgency = closestDist < params.RP
+    ? Math.max(params.kSIM, params.SS * clamp((params.RP - closestDist) / Math.max(params.RP - params.RI, 0.2), 0.3, 1.0))
+    : params.kSIM * Math.min(1.0, mag / 0.5);
+
+  return { fx: urgency * Fx / mag, fy: urgency * Fy / mag };
 }
 
 // ──────────────────────────────────────────────
@@ -379,12 +407,35 @@ function socialDSC(vxNom, vyNom) {
   const fTotalX = vxNom + fSIM.fx;
   const fTotalY = vyNom + fSIM.fy;
 
-  // DSC modulation matrix
-  const M = combinedModulation(robot.x, robot.y, robot.vx, robot.vy, humans);
+  // DSC modulation matrix (aware of fTotal direction so outward repulsion is never suppressed)
+  const M = combinedModulation(robot.x, robot.y, robot.vx, robot.vy, humans, fTotalX, fTotalY);
 
   // Apply modulation: ξ̇ = M · f_total
-  const vxMod = M.m00 * fTotalX + M.m01 * fTotalY;
-  const vyMod = M.m10 * fTotalX + M.m11 * fTotalY;
+  let vxMod = M.m00 * fTotalX + M.m01 * fTotalY;
+  let vyMod = M.m10 * fTotalX + M.m11 * fTotalY;
+
+  // Wall-sliding escape when near arena boundaries and a human is within Personal/Social zone:
+  // prevents a moving human from pinning the robot into a wall or corner.
+  if (closestDist < params.RS) {
+    const wallMargin = 0.55;
+    const nearLeft   = robot.x < wallMargin;
+    const nearRight  = robot.x > WORLD_SIZE - wallMargin;
+    const nearBottom = robot.y < wallMargin;
+    const nearTop    = robot.y > WORLD_SIZE - wallMargin;
+
+    if ((nearLeft && vxMod < 0) || (nearRight && vxMod > 0)) {
+      const slideMag = Math.abs(vxMod);
+      vxMod = 0;
+      const dirY = Math.abs(vyMod) > 0.02 ? Math.sign(vyMod) : (robot.y < WORLD_SIZE * 0.5 ? 1 : -1);
+      vyMod += dirY * slideMag * 0.85;
+    }
+    if ((nearBottom && vyMod < 0) || (nearTop && vyMod > 0)) {
+      const slideMag = Math.abs(vyMod);
+      vyMod = 0;
+      const dirX = Math.abs(vxMod) > 0.02 ? Math.sign(vxMod) : (robot.x < WORLD_SIZE * 0.5 ? 1 : -1);
+      vxMod += dirX * slideMag * 0.85;
+    }
+  }
 
   // Speed clamping  (preserve direction, cap magnitude)
   const speed = hypot(vxMod, vyMod);
@@ -412,15 +463,28 @@ function tick(dt) {
   const MARGIN = 0.2;
   for (const h of humans) {
     if (!h.speed || h.speed < 1e-6) continue;
+
+    if (humanMotionMode === 'random') {
+      h.wanderTimer = (h.wanderTimer ?? 0) - dt;
+      if (h.wanderTimer <= 0) {
+        h.wanderTimer = 1.2 + Math.random() * 2.5;
+        h.turnRate = Math.random() < 0.75 ? (Math.random() - 0.5) * 1.6 : 0;
+      }
+      h.angle += (h.turnRate ?? 0) * dt;
+      h.angle = Math.atan2(Math.sin(h.angle), Math.cos(h.angle));
+    }
+
     let nx = h.x + Math.cos(h.angle) * h.speed * dt;
     let ny = h.y + Math.sin(h.angle) * h.speed * dt;
 
     if (humanEdgeBounce) {
       // Bounce off walls
-      if (nx < MARGIN)              { nx = MARGIN;            h.angle = Math.PI - h.angle; }
-      if (nx > WORLD_SIZE - MARGIN) { nx = WORLD_SIZE-MARGIN; h.angle = Math.PI - h.angle; }
-      if (ny < MARGIN)              { ny = MARGIN;            h.angle = -h.angle; }
-      if (ny > WORLD_SIZE - MARGIN) { ny = WORLD_SIZE-MARGIN; h.angle = -h.angle; }
+      const jitter = humanMotionMode === 'random' ? () => (Math.random() - 0.5) * 0.4 : () => 0;
+      if (nx < MARGIN)              { nx = MARGIN;            h.angle = Math.PI - h.angle + jitter(); }
+      if (nx > WORLD_SIZE - MARGIN) { nx = WORLD_SIZE-MARGIN; h.angle = Math.PI - h.angle + jitter(); }
+      if (ny < MARGIN)              { ny = MARGIN;            h.angle = -h.angle + jitter(); }
+      if (ny > WORLD_SIZE - MARGIN) { ny = WORLD_SIZE-MARGIN; h.angle = -h.angle + jitter(); }
+      h.angle = Math.atan2(Math.sin(h.angle), Math.cos(h.angle));
     } else {
       // Wrap around
       if (nx < MARGIN)              nx = WORLD_SIZE - MARGIN;
@@ -981,23 +1045,31 @@ function clearHumans() {
 // Human motion controls
 // ──────────────────────────────────────────────
 
-/** Set all humans walking in a cardinal direction (or stop). */
+/** Set all humans walking in a cardinal direction, random wandering, or stop. */
 function setHumanDir(dir) {
-  const DIRS = {
-    up:    Math.PI / 2,
-    down: -Math.PI / 2,
-    right:  0,
-    left:   Math.PI,
-  };
   if (dir === 'stop') {
-    humans.forEach(h => { h.speed = 0; });
+    humanMotionMode = 'stop';
+    humans.forEach(h => { h.speed = 0; h.turnRate = 0; });
     addLog('🚶 All humans stopped', 'log-info');
     highlightDirBtn(null);
     return;
   }
-  const angle = DIRS[dir];
+  if (dir === 'random') {
+    humanMotionMode = 'random';
+    humans.forEach(h => {
+      h.angle = (Math.random() * 2 - 1) * Math.PI;
+      h.speed = humanWalkSpeed;
+      h.wanderTimer = 1.0 + Math.random() * 2.5;
+      h.turnRate = (Math.random() - 0.5) * 1.6;
+    });
+    addLog(`🎲 Random walk active (${humanWalkSpeed.toFixed(1)} m/s)`, 'log-info');
+    highlightDirBtn('random');
+    return;
+  }
+  const angle = HUMAN_DIRS[dir];
   if (angle === undefined) return;
-  humans.forEach(h => { h.angle = angle; h.speed = humanWalkSpeed; });
+  humanMotionMode = dir;
+  humans.forEach(h => { h.angle = angle; h.speed = humanWalkSpeed; h.turnRate = 0; });
   const emoji = { up:'↑', down:'↓', left:'←', right:'→' }[dir];
   addLog(`🚶 All humans walking ${emoji} (${humanWalkSpeed.toFixed(1)} m/s)`, 'log-info');
   highlightDirBtn(dir);
@@ -1022,7 +1094,7 @@ function setEdgeBounce(val) {
 
 /** Visual feedback: highlight the active direction button. */
 function highlightDirBtn(dir) {
-  ['up','down','left','right','stop'].forEach(d => {
+  ['up','down','left','right','stop','random'].forEach(d => {
     const el = document.getElementById('dirBtn_' + d);
     if (el) el.classList.toggle('active', d === dir);
   });
@@ -1155,13 +1227,26 @@ window.addEventListener('DOMContentLoaded', () => {
   function placeHuman(px, py) {
     const { wx, wy } = p2w(px, py, canvas.height);
     const id = nextId++;
-    // Inherit current global direction if any human is already walking
-    const walkingH = humans.find(h => h.speed > 0);
-    const angle = walkingH ? walkingH.angle : Math.atan2(robot.y - wy, robot.x - wx);
-    const speed = walkingH ? humanWalkSpeed : 0;
+    let angle = Math.atan2(robot.y - wy, robot.x - wx);
+    let speed = 0;
+    let wanderTimer = 0;
+    let turnRate = 0;
+
+    if (humanMotionMode === 'random') {
+      angle = (Math.random() * 2 - 1) * Math.PI;
+      speed = humanWalkSpeed;
+      wanderTimer = 1.0 + Math.random() * 2.5;
+      turnRate = (Math.random() - 0.5) * 1.6;
+    } else if (HUMAN_DIRS[humanMotionMode] !== undefined) {
+      angle = HUMAN_DIRS[humanMotionMode];
+      speed = humanWalkSpeed;
+    }
+
     humans.push({ id, x: clamp(wx, 0.2, WORLD_SIZE-0.2), y: clamp(wy, 0.2, WORLD_SIZE-0.2),
-                  angle, speed });
-    const moving = speed > 0 ? ` · walking ${speed.toFixed(1)}m/s` : ' · stationary';
+                  angle, speed, wanderTimer, turnRate });
+    const moving = speed > 0
+      ? (humanMotionMode === 'random' ? ` · random walk ${speed.toFixed(1)}m/s` : ` · walking ${speed.toFixed(1)}m/s`)
+      : ' · stationary';
     addLog(`👤 H${id} placed at (${wx.toFixed(2)}, ${wy.toFixed(2)})${moving}`, 'log-info');
     const hint = document.getElementById('canvasHint'); if (hint) hint.style.opacity = '0';
   }

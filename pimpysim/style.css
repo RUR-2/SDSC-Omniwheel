@@ -881,3 +881,37 @@ details[open] .rec-summary::before { transform: rotate(90deg); }
 .dpad-right { grid-column: 3; grid-row: 2; }
 .dpad-down  { grid-column: 2; grid-row: 3; }
 
+.btn-random-walk {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 12px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-random-walk:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-purple);
+  box-shadow: 0 0 8px rgba(168,85,247,0.25);
+}
+
+.btn-random-walk.active {
+  background: rgba(168,85,247,0.18);
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+  box-shadow: 0 0 12px rgba(168,85,247,0.35);
+}
+
+
