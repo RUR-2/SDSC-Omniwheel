@@ -83,6 +83,21 @@ let hoveredId   = null;
 let autoGoal    = null;
 let prevZone    = 'PUBLIC';
 
+// Patrol A <-> B loop state
+let patrolA        = { x: 1.5, y: 5.0 };
+let patrolB        = { x: 8.5, y: 5.0 };
+let patrolTarget   = 'A';   // 'A' or 'B'
+let patrolLoops    = 0;
+let patrolPickNext = 'A';   // next click sets 'A' or 'B'
+let draggingPatrol = null;  // 'A' | 'B' | null
+
+// Vision Sensor / Camera FOV state (87° horizontal FOV, max 8.0 m)
+const FOV_ANGLE_DEG = 87.0;
+const FOV_HALF_RAD  = (FOV_ANGLE_DEG * Math.PI / 180) * 0.5;
+const FOV_MAX_DIST  = 8.0;
+let fovEnabled      = false;
+let fovAutoFace     = true;
+
 // DSC + SIM diagnostic
 let sfm = {
   zone: 'PUBLIC', closestDist: 999,
@@ -98,21 +113,26 @@ let lastTime = 0;
 // ──────────────────────────────────────────────
 // Recording state
 // ──────────────────────────────────────────────
-let recording     = false;
-let recordBuf     = [];   // array of row objects
-let recordStartT  = 0;    // performance.now() when started
-let recordSimT    = 0;    // simulation time counter (s)
+let recording        = false;
+let recordBuf        = [];   // array of row objects
+let recordStartT     = 0;    // performance.now() when started
+let recordSimT       = 0;    // simulation time counter (s)
+let recAutoStopLoops = 1;    // 0 = manual, 0.5 = A->B, 1 = A->B->A, etc.
+let recHalfLegs      = 0;    // counts completed legs (A->B = 1, B->A = 2 = 1 loop)
+let recScenarioTag   = '';   // optional filename prefix for scenario exports
 const MAX_REC_ROWS   = 50000; // ~83 min at 10 Hz — hard cap
 const MAX_REC_HUMANS = 6;     // human slots recorded per row
 
-// Build header: base columns + h1_x,h1_y,h1_angle_deg … h6_…
+// Build header: base columns + scenario columns + h1_x,h1_y,h1_angle_deg,h1_visible … h6_…
 const _hCols = Array.from({length: MAX_REC_HUMANS}, (_, i) =>
-  `h${i+1}_x,h${i+1}_y,h${i+1}_angle_deg`).join(',');
+  `h${i+1}_x,h${i+1}_y,h${i+1}_angle_deg,h${i+1}_visible`).join(',');
 const REC_CSV_HEADER =
   'time_s,robot_x,robot_y,robot_vx,robot_vy,robot_angle_deg,' +
-  'closest_dist_m,zone,' +
+  'closest_dist_m,actual_dist_m,zone,' +
   'fx_pa,fy_pa,fx_sr,fy_sr,fx_sim,fy_sim,' +
-  `pkt_X,pkt_Y,pkt_W,num_humans,${_hCols}`;
+  'pkt_X,pkt_Y,pkt_W,num_humans,num_visible_humans,fov_enabled,' +
+  'mode,patrol_target,patrol_loop,patrol_ax,patrol_ay,patrol_bx,patrol_by,goal_dist_m,lateral_dev_m,' +
+  `${_hCols}`;
 
 // ──────────────────────────────────────────────
 // Math helpers
@@ -137,6 +157,24 @@ function getZone(d) {
   if (d < params.RP) return 'PERSONAL';
   if (d < params.RS) return 'SOCIAL';
   return 'PUBLIC';
+}
+
+// ──────────────────────────────────────────────
+// Vision Sensor (FOV 87°, max 8 m) visibility check
+// ──────────────────────────────────────────────
+function isHumanVisible(h, rx = robot.x, ry = robot.y, rAngle = robot.angle) {
+  if (!fovEnabled) return true;
+  const dx = h.x - rx, dy = h.y - ry;
+  const dist = hypot(dx, dy);
+  if (dist > FOV_MAX_DIST) return false;
+  if (dist < 1e-6) return true;
+  const angleToH = Math.atan2(dy, dx);
+  const diff = Math.atan2(Math.sin(angleToH - rAngle), Math.cos(angleToH - rAngle));
+  return Math.abs(diff) <= FOV_HALF_RAD;
+}
+
+function getVisibleHumans(rx = robot.x, ry = robot.y) {
+  return fovEnabled ? humans.filter(h => isHumanVisible(h, rx, ry, robot.angle)) : humans;
 }
 
 // ──────────────────────────────────────────────
@@ -273,9 +311,9 @@ function combinedModulation(rx, ry, rvx, rvy, humanList, fTotalX = 0, fTotalY = 
 // ──────────────────────────────────────────────
 // SIM: F_pa – Pedestrian Avoidance force (Eq. 16-18)
 // ──────────────────────────────────────────────
-function computeFpa(rx, ry) {
+function computeFpa(rx, ry, visList = getVisibleHumans(rx, ry)) {
   let fxT = 0, fyT = 0;
-  for (const h of humans) {
+  for (const h of visList) {
     const dx = rx - h.x, dy = ry - h.y;
     const dist = hypot(dx, dy);
     if (dist < 1e-6) {
@@ -297,9 +335,9 @@ function computeFpa(rx, ry) {
 //   forward path corridor without pulling the robot
 //   closer to the pedestrian center.
 // ──────────────────────────────────────────────
-function computeFpp(rx, ry) {
+function computeFpp(rx, ry, visList = getVisibleHumans(rx, ry)) {
   let fxT = 0, fyT = 0;
-  for (const h of humans) {
+  for (const h of visList) {
     const dx = rx - h.x, dy = ry - h.y;
     const dist = hypot(dx, dy);
     if (dist > params.RS * 1.1 || dist < 1e-6) continue;
@@ -330,9 +368,9 @@ function computeFpp(rx, ry) {
 //   robot to the right when approaching a
 //   pedestrian from the front.
 // ──────────────────────────────────────────────
-function computeFsr(rx, ry) {
+function computeFsr(rx, ry, visList = getVisibleHumans(rx, ry)) {
   let fxT = 0, fyT = 0;
-  for (const h of humans) {
+  for (const h of visList) {
     const dx = rx - h.x, dy = ry - h.y;
     const dist = hypot(dx, dy);
     if (dist > params.RS || dist < 1e-6) continue;
@@ -360,10 +398,10 @@ function computeFsr(rx, ry) {
 // SIM: Combine all forces → normalized reference direction
 //   [Eq. 14-15]  f_SIM = k_SIM * F_SIM / ||F_SIM||
 // ──────────────────────────────────────────────
-function computeSIM(rx, ry) {
-  const pa = computeFpa(rx, ry);
-  const pp = computeFpp(rx, ry);
-  const sr = computeFsr(rx, ry);
+function computeSIM(rx, ry, visList = getVisibleHumans(rx, ry)) {
+  const pa = computeFpa(rx, ry, visList);
+  const pp = computeFpp(rx, ry, visList);
+  const sr = computeFsr(rx, ry, visList);
 
   const Fx = params.wpa * pa.fxT + params.wpp * pp.fxT + params.wsr * sr.fxT;
   const Fy = params.wpa * pa.fyT + params.wpp * pp.fyT + params.wsr * sr.fyT;
@@ -375,8 +413,8 @@ function computeSIM(rx, ry) {
   if (mag < 0.01) return { fx: 0, fy: 0 };
 
   // Smoothly scale SIM velocity when force is small, and boost up to SS inside Personal/Intimate zone
-  const closestDist = humans.length > 0
-    ? Math.min(...humans.map(h => hypot(h.x - rx, h.y - ry)))
+  const closestDist = visList.length > 0
+    ? Math.min(...visList.map(h => hypot(h.x - rx, h.y - ry)))
     : 999;
   const urgency = closestDist < params.RP
     ? Math.max(params.kSIM, params.SS * clamp((params.RP - closestDist) / Math.max(params.RP - params.RI, 0.2), 0.3, 1.0))
@@ -390,17 +428,18 @@ function computeSIM(rx, ry) {
 //   ξ̇r = M_safety(ξr) · (f(ξr) + f_SIM(ξr))
 // ──────────────────────────────────────────────
 function socialDSC(vxNom, vyNom) {
-  if (humans.length === 0) {
+  const visHumans = getVisibleHumans(robot.x, robot.y);
+  if (visHumans.length === 0) {
     sfm = { zone: 'PUBLIC', closestDist: 999, fx_pa: 0, fy_pa: 0,
             fx_sr: 0, fy_sr: 0, fx_sim: 0, fy_sim: 0, numHumans: 0, modScale: 1.0 };
     return { vx: vxNom, vy: vyNom };
   }
 
-  // Closest distance (for zone display)
-  const closestDist = Math.min(...humans.map(h => hypot(h.x - robot.x, h.y - robot.y)));
+  // Closest distance among visible humans (for zone display)
+  const closestDist = Math.min(...visHumans.map(h => hypot(h.x - robot.x, h.y - robot.y)));
 
   // SIM: social inference dynamics
-  const fSIM = computeSIM(robot.x, robot.y);
+  const fSIM = computeSIM(robot.x, robot.y, visHumans);
   sfm.fx_sim = fSIM.fx; sfm.fy_sim = fSIM.fy;
 
   // Combined nominal + SIM
@@ -408,11 +447,45 @@ function socialDSC(vxNom, vyNom) {
   const fTotalY = vyNom + fSIM.fy;
 
   // DSC modulation matrix (aware of fTotal direction so outward repulsion is never suppressed)
-  const M = combinedModulation(robot.x, robot.y, robot.vx, robot.vy, humans, fTotalX, fTotalY);
+  const M = combinedModulation(robot.x, robot.y, robot.vx, robot.vy, visHumans, fTotalX, fTotalY);
 
   // Apply modulation: ξ̇ = M · f_total
   let vxMod = M.m00 * fTotalX + M.m01 * fTotalY;
   let vyMod = M.m10 * fTotalX + M.m11 * fTotalY;
+
+  // Head-on colinear anti-stall: when nominal velocity points directly toward a human
+  // (e.g. stationary H1 in the middle of A<->B path), radial F_pa and lam_n -> 0 can cancel
+  // forward motion. Inject smooth tangential bypass velocity (right-hand social rule bias).
+  const nomMag = hypot(vxNom, vyNom);
+  if (nomMag > 0.05 && closestDist < params.RS * 0.9) {
+    let closestH = visHumans[0];
+    let minD = hypot(closestH.x - robot.x, closestH.y - robot.y);
+    for (const h of visHumans) {
+      const d = hypot(h.x - robot.x, h.y - robot.y);
+      if (d < minD) { minD = d; closestH = h; }
+    }
+    const toHx = closestH.x - robot.x, toHy = closestH.y - robot.y;
+    const approachCos = dot(vxNom, vyNom, toHx, toHy) / (nomMag * (minD || 1e-6));
+    if (approachCos > 0.25) {
+      // Unit vector from human to robot
+      const rxU = -toHx / (minD || 1e-6), ryU = -toHy / (minD || 1e-6);
+      // Two tangents to obstacle circle: t1 = CCW, t2 = CW
+      // Pick the tangent that aligns with right-hand pass (or current lateral offset if already established)
+      const crossOff = cross2d(vxNom / nomMag, vyNom / nomMag, toHx, toHy);
+      // If crossOff > 0, human is to the left of robot's path -> pass on right (CW around human = [-ryU, rxU])
+      // If nearly colinear (|crossOff| < 0.18), default to right-hand traffic pass
+      const passRight = Math.abs(crossOff) < 0.18 ? true : (crossOff > 0);
+      const tx = passRight ? -ryU :  ryU;
+      const ty = passRight ?  rxU : -rxU;
+      const tangProj = dot(vxMod, vyMod, tx, ty);
+      const minTang  = nomMag * 0.72 * clamp((params.RS * 0.9 - minD) / (params.RP * 1.1), 0.25, 1.0);
+      if (tangProj < minTang) {
+        const boost = minTang - tangProj;
+        vxMod += tx * boost;
+        vyMod += ty * boost;
+      }
+    }
+  }
 
   // Wall-sliding escape when near arena boundaries and a human is within Personal/Social zone:
   // prevents a moving human from pinning the robot into a wall or corner.
@@ -448,7 +521,7 @@ function socialDSC(vxNom, vyNom) {
   sfm.modScale   = clamp(speed / nomSpeed, 0, 1);
   sfm.zone       = getZone(closestDist);
   sfm.closestDist = closestDist;
-  sfm.numHumans  = humans.length;
+  sfm.numHumans  = visHumans.length;
 
   return { vx: vxOut, vy: vyOut };
 }
@@ -498,14 +571,15 @@ function tick(dt) {
   // Nominal velocity from driver / planner
   let vxNom = 0, vyNom = 0, vwNom = 0;
 
+  if (keys['q']) vwNom += 1;
+  if (keys['e']) vwNom -= 1;
+
   if (mode === 'drive') {
     if (keys['w'] || keys['arrowup'])    vyNom += params.SS;
     if (keys['s'] || keys['arrowdown'])  vyNom -= params.SS;
     if (keys['a'] || keys['arrowleft'])  vxNom -= params.SS;
     if (keys['d'] || keys['arrowright']) vxNom += params.SS;
-    if (keys['q']) vwNom += 1;
-    if (keys['e']) vwNom -= 1;
-  } else if (autoGoal) {
+  } else if (mode === 'auto' && autoGoal) {
     const dx = autoGoal.x - robot.x, dy = autoGoal.y - robot.y;
     const d  = hypot(dx, dy);
     if (d > 0.15) {
@@ -515,6 +589,34 @@ function tick(dt) {
       autoGoal = null;
       addLog('✅ Goal reached', 'log-success');
     }
+  } else if (mode === 'patrol') {
+    const goal = patrolTarget === 'A' ? patrolA : patrolB;
+    const dx = goal.x - robot.x, dy = goal.y - robot.y;
+    const d  = hypot(dx, dy);
+    if (d > 0.18) {
+      vxNom = (dx / d) * params.SS;
+      vyNom = (dy / d) * params.SS;
+    } else {
+      if (patrolTarget === 'A') {
+        patrolTarget = 'B';
+        patrolLoops++;
+        if (recording) recHalfLegs++;
+        addLog(`🔁 Reached A (${patrolA.x.toFixed(1)}, ${patrolA.y.toFixed(1)}) → Loop #${patrolLoops} done, moving to B`, 'log-success');
+      } else {
+        patrolTarget = 'A';
+        if (recording) recHalfLegs++;
+        addLog(`🔁 Reached B (${patrolB.x.toFixed(1)}, ${patrolB.y.toFixed(1)}) → returning to A`, 'log-info');
+      }
+      updatePatrolUI();
+    }
+  }
+
+  // Auto-face movement direction when FOV 87° Auto-Face is active (and Q/E not pressed)
+  if (fovEnabled && fovAutoFace && vwNom === 0 && hypot(vxNom, vyNom) > 0.02) {
+    const desiredAngle = Math.atan2(vyNom, vxNom);
+    const angleDiff = Math.atan2(Math.sin(desiredAngle - robot.angle), Math.cos(desiredAngle - robot.angle));
+    robot.angle += clamp(angleDiff, -6.0 * dt, 6.0 * dt);
+    robot.angle = Math.atan2(Math.sin(robot.angle), Math.cos(robot.angle));
   }
 
   // Social-DSC modulation
@@ -537,38 +639,65 @@ function tick(dt) {
   if (recording && recordBuf.length < MAX_REC_ROWS) {
     recordSimT += dt;
     const xB = toByte(robot.vx), yB = toByte(robot.vy), wB = toByte(robot.vw);
+    const actualDist = humans.length > 0
+      ? Math.min(...humans.map(h => hypot(h.x - robot.x, h.y - robot.y)))
+      : -1;
+    const abDx = patrolB.x - patrolA.x, abDy = patrolB.y - patrolA.y;
+    const abLen = hypot(abDx, abDy) || 1e-6;
+    const lateralDev = ((robot.x - patrolA.x) * (-abDy) + (robot.y - patrolA.y) * abDx) / abLen;
+    const curGoal = mode === 'patrol' ? (patrolTarget === 'A' ? patrolA : patrolB) : (autoGoal || patrolB);
+    const goalDist = hypot(curGoal.x - robot.x, curGoal.y - robot.y);
+
     recordBuf.push({
-      time_s:          +recordSimT.toFixed(4),
-      robot_x:         +robot.x.toFixed(4),
-      robot_y:         +robot.y.toFixed(4),
-      robot_vx:        +robot.vx.toFixed(4),
-      robot_vy:        +robot.vy.toFixed(4),
-      robot_angle_deg: +(robot.angle * 180 / Math.PI).toFixed(2),
-      closest_dist_m:  +(sfm.closestDist < 900 ? sfm.closestDist : -1).toFixed(4),
-      zone:            sfm.zone,
-      fx_pa:           +sfm.fx_pa.toFixed(4),
-      fy_pa:           +sfm.fy_pa.toFixed(4),
-      fx_sr:           +sfm.fx_sr.toFixed(4),
-      fy_sr:           +sfm.fy_sr.toFixed(4),
-      fx_sim:          +sfm.fx_sim.toFixed(4),
-      fy_sim:          +sfm.fy_sim.toFixed(4),
-      pkt_X:           xB,
-      pkt_Y:           yB,
-      pkt_W:           wB,
-      num_humans:      humans.length,
+      time_s:             +recordSimT.toFixed(4),
+      robot_x:            +robot.x.toFixed(4),
+      robot_y:            +robot.y.toFixed(4),
+      robot_vx:           +robot.vx.toFixed(4),
+      robot_vy:           +robot.vy.toFixed(4),
+      robot_angle_deg:    +(robot.angle * 180 / Math.PI).toFixed(2),
+      closest_dist_m:     +(sfm.closestDist < 900 ? sfm.closestDist : -1).toFixed(4),
+      actual_dist_m:      +(actualDist >= 0 ? actualDist : -1).toFixed(4),
+      zone:               sfm.zone,
+      fx_pa:              +sfm.fx_pa.toFixed(4),
+      fy_pa:              +sfm.fy_pa.toFixed(4),
+      fx_sr:              +sfm.fx_sr.toFixed(4),
+      fy_sr:              +sfm.fy_sr.toFixed(4),
+      fx_sim:             +sfm.fx_sim.toFixed(4),
+      fy_sim:             +sfm.fy_sim.toFixed(4),
+      pkt_X:              xB,
+      pkt_Y:              yB,
+      pkt_W:              wB,
+      num_humans:         humans.length,
+      num_visible_humans: sfm.numHumans,
+      fov_enabled:        fovEnabled ? 1 : 0,
+      mode:               mode,
+      patrol_target:      mode === 'patrol' ? patrolTarget : '',
+      patrol_loop:        patrolLoops,
+      patrol_ax:          +patrolA.x.toFixed(2),
+      patrol_ay:          +patrolA.y.toFixed(2),
+      patrol_bx:          +patrolB.x.toFixed(2),
+      patrol_by:          +patrolB.y.toFixed(2),
+      goal_dist_m:        +goalDist.toFixed(4),
+      lateral_dev_m:      +lateralDev.toFixed(4),
       // Human slots h1..h6 — empty string if slot unused (pandas reads as NaN)
       ...Object.fromEntries(
         Array.from({length: MAX_REC_HUMANS}, (_, i) => {
           const h = humans[i];
           return [
-            [`h${i+1}_x`,         h ? +h.x.toFixed(4)                     : ''],
-            [`h${i+1}_y`,         h ? +h.y.toFixed(4)                     : ''],
+            [`h${i+1}_x`,         h ? +h.x.toFixed(4)                       : ''],
+            [`h${i+1}_y`,         h ? +h.y.toFixed(4)                       : ''],
             [`h${i+1}_angle_deg`, h ? +(h.angle * 180 / Math.PI).toFixed(2) : ''],
+            [`h${i+1}_visible`,   h ? (isHumanVisible(h) ? 1 : 0)           : ''],
           ];
         }).flat()
       ),
     });
     updateRecUI();
+
+    if (mode === 'patrol' && recAutoStopLoops > 0 && recHalfLegs >= Math.round(recAutoStopLoops * 2)) {
+      addLog(`🎯 Target ${recAutoStopLoops} loop(s) completed — auto-exporting CSV`, 'log-success');
+      stopRecording();
+    }
   }
 }
 
@@ -603,6 +732,7 @@ function render(canvas, ctx) {
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   drawGrid(ctx, W, H);
+  if (fovEnabled) drawFOVCone(ctx, H);
   drawProxemicZones(ctx, H);
   drawTrail(ctx, H);
   for (const h of humans) drawHuman(ctx, h, H);
@@ -620,6 +750,45 @@ function render(canvas, ctx) {
     const r = 14;
     ctx.strokeRect(px - r, py - r, r * 2, r * 2);
     ctx.setLineDash([]);
+  } else if (mode === 'patrol') {
+    const pA = w2p(patrolA.x, patrolA.y, H);
+    const pB = w2p(patrolB.x, patrolB.y, H);
+    const rp = w2p(robot.x, robot.y, H);
+    const activePt = patrolTarget === 'A' ? pA : pB;
+
+    // Dashed path between A and B
+    ctx.strokeStyle = 'rgba(168,85,247,0.35)';
+    ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(pA.px, pA.py); ctx.lineTo(pB.px, pB.py); ctx.stroke();
+
+    // Dashed line from robot to current target
+    ctx.strokeStyle = patrolTarget === 'A' ? 'rgba(34,197,94,0.45)' : 'rgba(59,130,246,0.45)';
+    ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.moveTo(rp.px, rp.py); ctx.lineTo(activePt.px, activePt.py); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw markers A and B
+    for (const [label, pt, col, isTarget] of [
+      ['A', pA, '#22c55e', patrolTarget === 'A'],
+      ['B', pB, '#3b82f6', patrolTarget === 'B'],
+    ]) {
+      const r = isTarget ? 15 : 12;
+      if (isTarget) {
+        ctx.beginPath(); ctx.arc(pt.px, pt.py, r + 6, 0, Math.PI * 2);
+        ctx.fillStyle = col + '28'; ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.beginPath(); ctx.arc(pt.px, pt.py, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#0f172a'; ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.stroke();
+
+      ctx.fillStyle = col;
+      ctx.font = 'bold 12px JetBrains Mono, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, pt.px, pt.py);
+      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    }
   }
 }
 
@@ -639,9 +808,68 @@ function drawGrid(ctx, W, H) {
   }
 }
 
+function drawFOVCone(ctx, H) {
+  const { px: rx, py: ry } = w2p(robot.x, robot.y, H);
+  const maxR = FOV_MAX_DIST * ppm;
+  // Screen Y is flipped, so canvas angle is -robot.angle
+  const centerAng = -robot.angle;
+  const startAng  = centerAng - FOV_HALF_RAD;
+  const endAng    = centerAng + FOV_HALF_RAD;
+
+  ctx.save();
+
+  // Radial gradient fill for 87° / 8m cone
+  const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, maxR);
+  grad.addColorStop(0,   'rgba(6, 182, 212, 0.14)');
+  grad.addColorStop(0.7, 'rgba(6, 182, 212, 0.06)');
+  grad.addColorStop(1,   'rgba(6, 182, 212, 0.02)');
+
+  ctx.beginPath();
+  ctx.moveTo(rx, ry);
+  ctx.arc(rx, ry, maxR, startAng, endAng);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Cone edges & 8m arc
+  ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(rx, ry);
+  ctx.arc(rx, ry, maxR, startAng, endAng);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Center optical axis line
+  ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 6]);
+  ctx.beginPath();
+  ctx.moveTo(rx, ry);
+  ctx.lineTo(rx + Math.cos(centerAng) * maxR, ry + Math.sin(centerAng) * maxR);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Label near outer arc
+  const lblR = Math.min(maxR - 18, 220);
+  const lx = rx + Math.cos(centerAng) * lblR;
+  const ly = ry + Math.sin(centerAng) * lblR;
+  ctx.fillStyle = 'rgba(6, 182, 212, 0.75)';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('FOV 87° · max 8m', lx, ly);
+  ctx.textAlign = 'left';
+
+  ctx.restore();
+}
+
 // Draw asymmetric Gaussian proxemic zone for each human
 function drawProxemicZones(ctx, H) {
   for (const h of humans) {
+    const visible = isHumanVisible(h);
+    if (!visible) continue;
     const { px: hx, py: hy } = w2p(h.x, h.y, H);
     const sh = params.sigma_h * ppm;  // pixels
     const sr = params.sigma_r * ppm;
@@ -710,18 +938,27 @@ function drawTrail(ctx, H) {
 
 function drawHuman(ctx, h, H) {
   const { px, py } = w2p(h.x, h.y, H);
-  const dist = hypot(h.x - robot.x, h.y - robot.y);
-  const col  = ZONE_COL[getZone(dist)];
-  const r    = (dragging && dragging.id === h.id) ? 22 : (hoveredId === h.id ? 20 : 16);
+  const dist    = hypot(h.x - robot.x, h.y - robot.y);
+  const visible = isHumanVisible(h);
+  const col     = visible ? ZONE_COL[getZone(dist)] : '#4a5a78';
+  const r       = (dragging && dragging.id === h.id) ? 22 : (hoveredId === h.id ? 20 : 16);
+
+  ctx.save();
+  if (!visible) ctx.globalAlpha = 0.4;
 
   // Glow
-  const g = ctx.createRadialGradient(px, py, 0, px, py, r * 2.5);
-  g.addColorStop(0, col + '44'); g.addColorStop(1, 'transparent');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  if (visible) {
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r * 2.5);
+    g.addColorStop(0, col + '44'); g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  }
 
   // Body
-  ctx.fillStyle = '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+  ctx.fillStyle = visible ? '#fff' : '#1e293b';
+  ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+  if (!visible) ctx.setLineDash([4, 3]);
   ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.setLineDash([]);
 
   // Heading arrow
   ctx.strokeStyle = col; ctx.lineWidth = 2.5;
@@ -740,8 +977,10 @@ function drawHuman(ctx, h, H) {
   ctx.fillStyle = '#e8edf5'; ctx.font = 'bold 10px Inter, sans-serif';
   ctx.fillText(`H${h.id}`, px, py + r + 14);
   ctx.fillStyle = col; ctx.font = '9px JetBrains Mono, monospace';
-  ctx.fillText(`${dist.toFixed(2)}m`, px, py + r + 24);
+  ctx.fillText(visible ? `${dist.toFixed(2)}m` : `${dist.toFixed(1)}m [BLIND]`, px, py + r + 24);
   ctx.textAlign = 'left';
+
+  ctx.restore();
 }
 
 function drawSIMForces(ctx, H) {
@@ -847,6 +1086,20 @@ function drawForceCanvas(fc, fctx) {
   fctx.moveTo(cx-R, cy); fctx.lineTo(cx+R, cy);
   fctx.moveTo(cx, cy-R); fctx.lineTo(cx, cy+R); fctx.stroke();
 
+  // FOV wedge on polar plot if enabled
+  if (fovEnabled) {
+    const centerAng = -robot.angle;
+    fctx.beginPath();
+    fctx.moveTo(cx, cy);
+    fctx.arc(cx, cy, R, centerAng - FOV_HALF_RAD, centerAng + FOV_HALF_RAD);
+    fctx.closePath();
+    fctx.fillStyle = 'rgba(6, 182, 212, 0.12)';
+    fctx.fill();
+    fctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
+    fctx.lineWidth = 1;
+    fctx.stroke();
+  }
+
   // Robot dot
   fctx.fillStyle = '#06b6d4'; fctx.beginPath(); fctx.arc(cx, cy, 5, 0, Math.PI*2); fctx.fill();
 
@@ -854,9 +1107,10 @@ function drawForceCanvas(fc, fctx) {
   for (const h of humans) {
     const dx = h.x - robot.x, dy = h.y - robot.y;
     const dist = hypot(dx, dy);
+    const vis  = isHumanVisible(h);
     const hpx = cx + (dx / maxD) * R, hpy = cy - (dy / maxD) * R;
-    fctx.fillStyle = ZONE_COL[getZone(dist)];
-    fctx.globalAlpha = 0.85;
+    fctx.fillStyle = vis ? ZONE_COL[getZone(dist)] : '#4a5a78';
+    fctx.globalAlpha = vis ? 0.85 : 0.3;
     fctx.beginPath(); fctx.arc(hpx, hpy, 5, 0, Math.PI*2); fctx.fill();
     fctx.globalAlpha = 1;
 
@@ -930,7 +1184,12 @@ function updateUI() {
 
   if (sfm.zone !== prevZone) { addLog(ZONE_MSG[sfm.zone], ZONE_LOG[sfm.zone]); prevZone = sfm.zone; }
 
-  // Force table — now shows F_pa, F_sr per human
+  const fovVisEl = document.getElementById('fovVisCount');
+  if (fovVisEl) {
+    fovVisEl.textContent = `Visible: ${sfm.numHumans}/${humans.length}`;
+  }
+
+  // Force table — now shows F_pa, F_sr per human (with FOV visibility)
   const table = document.getElementById('forceTable');
   if (!humans.length) {
     table.innerHTML = '<p class="no-data">No detections</p>';
@@ -939,16 +1198,17 @@ function updateUI() {
       '<span>ID</span><span>Zone</span><span>Dist</span><span>Γ</span><span>f_SIM</span></div>' +
       humans.map(h => {
         const d    = hypot(h.x - robot.x, h.y - robot.y);
+        const vis  = isHumanVisible(h);
         const z    = getZone(d);
         const Gam  = gammaHuman(robot.x, robot.y, h).toFixed(2);
-        const fpa  = computeFpa(robot.x, robot.y);
-        const fMag = hypot(sfm.fx_sim, sfm.fy_sim).toFixed(2);
-        return `<div style="border-bottom:1px solid #1e2a40;padding:3px 0;display:flex;justify-content:space-between;gap:4px">
+        const fMag = vis ? hypot(sfm.fx_sim, sfm.fy_sim).toFixed(2) : '0.00';
+        const rowOp = vis ? '1' : '0.45';
+        return `<div style="border-bottom:1px solid #1e2a40;padding:3px 0;display:flex;justify-content:space-between;gap:4px;opacity:${rowOp}">
           <span style="color:#8090aa">H${h.id}</span>
-          <span style="color:${ZONE_COL[z]}">${z.slice(0,4)}</span>
+          <span style="color:${vis ? ZONE_COL[z] : '#4a5a78'}">${vis ? z.slice(0,4) : 'BLND'}</span>
           <span style="font-family:monospace;color:#e8edf5">${d.toFixed(2)}m</span>
-          <span style="font-family:monospace;color:${ZONE_COL[z]}">${Gam}</span>
-          <span style="font-family:monospace;color:#ec4899">${fMag}</span>
+          <span style="font-family:monospace;color:${vis ? ZONE_COL[z] : '#4a5a78'}">${Gam}</span>
+          <span style="font-family:monospace;color:${vis ? '#ec4899' : '#4a5a78'}">${fMag}</span>
         </div>`;
       }).join('')
   }
@@ -969,30 +1229,96 @@ function addLog(msg, cls = 'log-info') {
 function clearLog() { const c = document.getElementById('logContainer'); if (c) c.innerHTML = ''; }
 
 // ──────────────────────────────────────────────
-// Recording controls
+// Recording & Scenario Data Collector controls
 // ──────────────────────────────────────────────
+function setRecAutoStop(val) {
+  recAutoStopLoops = parseFloat(val) || 0;
+  addLog(
+    recAutoStopLoops > 0
+      ? `🎯 Auto-stop recording set to ${recAutoStopLoops} loop(s)`
+      : '🎯 Auto-stop disabled (manual stop)',
+    'log-info'
+  );
+}
+
+function setupCenterHumanScenario() {
+  // 1. Set horizontal route A(1.5, 5.0) <-> B(8.5, 5.0)
+  patrolA = { x: 1.5, y: 5.0 };
+  patrolB = { x: 8.5, y: 5.0 };
+  patrolTarget = 'B';
+  patrolLoops  = 0;
+
+  // 2. Place robot at Point A facing East (0 rad toward B)
+  robot = { x: patrolA.x, y: patrolA.y, angle: 0, vx: 0, vy: 0, vw: 0 };
+  trail = [];
+
+  // 3. Place 1 stationary human H1 right in the middle of the road (5.0, 5.0) facing West (towards A)
+  humanMotionMode = 'stop';
+  highlightDirBtn(null);
+  humans = [{
+    id: 1,
+    x: 5.0,
+    y: 5.0,
+    angle: Math.PI, // facing towards incoming robot from A
+    speed: 0,
+    wanderTimer: 0,
+    turnRate: 0,
+  }];
+  nextId = 2;
+
+  // 4. Enable Loop A<->B mode + FOV 87° / 8m with Auto-Face
+  setFovEnabled(true);
+  setFovAutoFace(true);
+  setMode('patrol');
+  patrolTarget = 'B';
+  updatePatrolUI();
+
+  const hint = document.getElementById('canvasHint');
+  if (hint) hint.style.opacity = '0';
+  addLog('🧍 Skenario siap: Robot di A(1.5,5.0) → B(8.5,5.0), H1 diam di tengah (5.0,5.0), FOV 87°/8m', 'log-success');
+}
+
+function startScenarioRecording() {
+  if (recording) stopRecording();
+  setupCenterHumanScenario();
+  const sel = document.getElementById('recAutoStop');
+  if (sel && parseFloat(sel.value) === 0) {
+    sel.value = '1';
+    recAutoStopLoops = 1;
+  }
+  recScenarioTag = 'skenario_h1_diam_tengah_ab_';
+  paused = false;
+  document.getElementById('pauseBtn').textContent = '⏸ Pause';
+  startRecording();
+}
+
 function startRecording() {
   if (recording) return;
   recordBuf     = [];
   recordSimT    = 0;
+  recHalfLegs   = 0;
   recordStartT  = performance.now();
   recording     = true;
   document.getElementById('recBtn').classList.add('recording');
   document.getElementById('recBtn').textContent = '⏹ Stop & Export';
   document.getElementById('recStatus').style.display = 'flex';
-  addLog('⏺ Recording started — collecting telemetry', 'log-danger');
+  const stopMsg = (mode === 'patrol' && recAutoStopLoops > 0)
+    ? ` (auto-stops after ${recAutoStopLoops} loop)`
+    : '';
+  addLog(`⏺ Recording started${stopMsg} — collecting telemetry`, 'log-danger');
 }
 
 function stopRecording() {
   if (!recording) return;
   recording = false;
   document.getElementById('recBtn').classList.remove('recording');
-  document.getElementById('recBtn').textContent = '⏺ Record';
+  document.getElementById('recBtn').textContent = '⏺ Record Manual';
   document.getElementById('recStatus').style.display = 'none';
   const n = recordBuf.length;
   addLog(`⏹ Recording stopped — ${n} rows collected`, 'log-success');
   if (n > 0) exportCSV();
   else addLog('⚠️ No data to export', 'log-warn');
+  recScenarioTag = '';
 }
 
 function toggleRecording() {
@@ -1011,7 +1337,8 @@ function exportCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   const ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const fname = `sdsc_sim_${ts}.csv`;
+  const prefix = recScenarioTag || 'sdsc_sim_';
+  const fname = `${prefix}${ts}.csv`;
   a.href = url;
   a.download = fname;
   a.click();
@@ -1103,17 +1430,106 @@ function highlightDirBtn(dir) {
 function resetRobot() {
   robot = { x: 5, y: 5, angle: 0, vx: 0, vy: 0, vw: 0 };
   trail = []; autoGoal = null;
+  if (mode === 'patrol') {
+    patrolTarget = 'A';
+    patrolLoops  = 0;
+    updatePatrolUI();
+  }
   addLog('⟳ Robot reset to center', 'log-info');
+}
+
+function updatePatrolUI() {
+  const badge = document.getElementById('patrolTargetBadge');
+  const loops = document.getElementById('patrolLoopCount');
+  const cA    = document.getElementById('patrolACoords');
+  const cB    = document.getElementById('patrolBCoords');
+  const btnA  = document.getElementById('btnPickA');
+  const btnB  = document.getElementById('btnPickB');
+  if (badge) {
+    badge.textContent = `Heading → ${patrolTarget}`;
+    badge.className   = `patrol-badge target-${patrolTarget.toLowerCase()}`;
+  }
+  if (loops) loops.textContent = `Loops: ${patrolLoops}`;
+  if (cA)    cA.textContent    = `(${patrolA.x.toFixed(1)}, ${patrolA.y.toFixed(1)})`;
+  if (cB)    cB.textContent    = `(${patrolB.x.toFixed(1)}, ${patrolB.y.toFixed(1)})`;
+  if (btnA)  btnA.classList.toggle('active-pick', patrolPickNext === 'A');
+  if (btnB)  btnB.classList.toggle('active-pick', patrolPickNext === 'B');
+}
+
+function startPickPatrol(pt) {
+  if (mode !== 'patrol') setMode('patrol');
+  patrolPickNext = pt;
+  updatePatrolUI();
+  addLog(`📍 Click arena to set Point ${pt}`, 'log-info');
+}
+
+function setPatrolPreset(type) {
+  if (type === 'horiz') {
+    patrolA = { x: 1.5, y: 5.0 };
+    patrolB = { x: 8.5, y: 5.0 };
+  } else if (type === 'vert') {
+    patrolA = { x: 5.0, y: 1.5 };
+    patrolB = { x: 5.0, y: 8.5 };
+  } else if (type === 'diag') {
+    patrolA = { x: 1.8, y: 1.8 };
+    patrolB = { x: 8.2, y: 8.2 };
+  }
+  patrolTarget = hypot(robot.x - patrolA.x, robot.y - patrolA.y) < 0.25 ? 'B' : 'A';
+  patrolLoops  = 0;
+  updatePatrolUI();
+  addLog(`🔁 Route preset: A(${patrolA.x.toFixed(1)}, ${patrolA.y.toFixed(1)}) ↔ B(${patrolB.x.toFixed(1)}, ${patrolB.y.toFixed(1)})`, 'log-info');
 }
 
 function setMode(m) {
   mode = m; autoGoal = null;
   document.getElementById('btnDrive').classList.toggle('active', m === 'drive');
   document.getElementById('btnAuto').classList.toggle('active', m === 'auto');
-  document.getElementById('modeDesc').textContent = m === 'drive'
-    ? 'Keyboard drives the robot. Social-DSC modulates velocity.'
-    : 'Click arena to set a goal. Social-DSC navigates autonomously.';
+  const btnPatrol = document.getElementById('btnPatrol');
+  if (btnPatrol) btnPatrol.classList.toggle('active', m === 'patrol');
+
+  const patrolPanel = document.getElementById('patrolPanel');
+  if (patrolPanel) patrolPanel.style.display = m === 'patrol' ? 'block' : 'none';
+
+  if (m === 'drive') {
+    document.getElementById('modeDesc').textContent = 'Keyboard drives the robot. Social-DSC modulates velocity.';
+  } else if (m === 'auto') {
+    document.getElementById('modeDesc').textContent = 'Click arena to set a goal. Social-DSC navigates autonomously.';
+  } else if (m === 'patrol') {
+    document.getElementById('modeDesc').textContent = 'Robot moves A → B → A in a continuous loop.';
+    patrolTarget = hypot(robot.x - patrolA.x, robot.y - patrolA.y) < 0.25 ? 'B' : 'A';
+    updatePatrolUI();
+  }
   addLog(`🔄 Mode: ${m.toUpperCase()}`, 'log-info');
+}
+
+function setFovEnabled(val) {
+  fovEnabled = !!val;
+  const b360 = document.getElementById('btnFov360');
+  const b87  = document.getElementById('btnFov87');
+  const pnl  = document.getElementById('fovPanel');
+  if (b360) b360.classList.toggle('active', !fovEnabled);
+  if (b87)  b87.classList.toggle('active', fovEnabled);
+  if (pnl)  pnl.style.display = fovEnabled ? 'block' : 'none';
+  addLog(
+    fovEnabled
+      ? '📷 Vision sensor: Front FOV 87° · Max range 8.0 m'
+      : '🌐 Vision sensor: 360° omnidirectional',
+    'log-info'
+  );
+}
+
+function setFovAutoFace(val) {
+  fovAutoFace = !!val;
+  const bAuto = document.getElementById('btnFovAutoFace');
+  const bLock = document.getElementById('btnFovLockHeading');
+  if (bAuto) bAuto.classList.toggle('active', fovAutoFace);
+  if (bLock) bLock.classList.toggle('active', !fovAutoFace);
+  addLog(
+    fovAutoFace
+      ? '🧭 Camera heading: Auto-face movement direction'
+      : '🔒 Camera heading: Locked (use Q / E to rotate)',
+    'log-info'
+  );
 }
 
 function togglePause() {
@@ -1224,6 +1640,15 @@ window.addEventListener('DOMContentLoaded', () => {
     }) || null;
   }
 
+  function patrolAt(px, py) {
+    if (mode !== 'patrol') return null;
+    const pA = w2p(patrolA.x, patrolA.y, canvas.height);
+    if (hypot(px - pA.px, py - pA.py) < 20) return 'A';
+    const pB = w2p(patrolB.x, patrolB.y, canvas.height);
+    if (hypot(px - pB.px, py - pB.py) < 20) return 'B';
+    return null;
+  }
+
   function placeHuman(px, py) {
     const { wx, wy } = p2w(px, py, canvas.height);
     const id = nextId++;
@@ -1266,10 +1691,30 @@ window.addEventListener('DOMContentLoaded', () => {
     if (h) {
       const p = w2p(h.x, h.y, canvas.height);
       dragging = { id: h.id, ox: px - p.px, oy: py - p.py };
-    } else if (mode === 'auto') {
+      return;
+    }
+    const pPt = patrolAt(px, py);
+    if (pPt) {
+      draggingPatrol = pPt;
+      return;
+    }
+    if (mode === 'auto') {
       const { wx, wy } = p2w(px, py, canvas.height);
       autoGoal = { x: clamp(wx, 0.2, WORLD_SIZE-0.2), y: clamp(wy, 0.2, WORLD_SIZE-0.2) };
       addLog(`📍 Goal → (${autoGoal.x.toFixed(2)}, ${autoGoal.y.toFixed(2)})`, 'log-info');
+    } else if (mode === 'patrol' && !e.shiftKey) {
+      const { wx, wy } = p2w(px, py, canvas.height);
+      const pt = { x: clamp(wx, 0.2, WORLD_SIZE-0.2), y: clamp(wy, 0.2, WORLD_SIZE-0.2) };
+      if (patrolPickNext === 'A') {
+        patrolA = pt;
+        patrolPickNext = 'B';
+        addLog(`📍 Point A → (${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`, 'log-info');
+      } else {
+        patrolB = pt;
+        patrolPickNext = 'A';
+        addLog(`📍 Point B → (${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`, 'log-info');
+      }
+      updatePatrolUI();
     } else {
       placeHuman(px, py);
     }
@@ -1281,15 +1726,22 @@ window.addEventListener('DOMContentLoaded', () => {
       const { wx, wy } = p2w(px - dragging.ox, py - dragging.oy, canvas.height);
       const h = humans.find(h => h.id === dragging.id);
       if (h) { h.x = clamp(wx, 0.2, WORLD_SIZE-0.2); h.y = clamp(wy, 0.2, WORLD_SIZE-0.2); }
+    } else if (draggingPatrol) {
+      const { wx, wy } = p2w(px, py, canvas.height);
+      const pt = { x: clamp(wx, 0.2, WORLD_SIZE-0.2), y: clamp(wy, 0.2, WORLD_SIZE-0.2) };
+      if (draggingPatrol === 'A') patrolA = pt;
+      else patrolB = pt;
+      updatePatrolUI();
     } else {
       const h = humanAt(px, py);
+      const pPt = patrolAt(px, py);
       hoveredId = h ? h.id : null;
-      canvas.style.cursor = h ? 'grab' : 'crosshair';
+      canvas.style.cursor = (h || pPt) ? 'grab' : 'crosshair';
     }
   });
 
-  canvas.addEventListener('mouseup',    () => { dragging = null; });
-  canvas.addEventListener('mouseleave', () => { dragging = null; hoveredId = null; });
+  canvas.addEventListener('mouseup',    () => { dragging = null; draggingPatrol = null; });
+  canvas.addEventListener('mouseleave', () => { dragging = null; draggingPatrol = null; hoveredId = null; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
   canvas.addEventListener('touchstart', e => {

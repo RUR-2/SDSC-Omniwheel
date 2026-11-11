@@ -1,0 +1,2 @@
+duration_s,samples,completed_loops,min_clearance_m,min_detected_dist_m,safety_margin_above_RI_m,max_lateral_dev_m,path_length_m,ideal_line_dist_m,detour_ratio,mean_speed_ms,max_speed_ms,fov_87_enabled,h1_fov_visible_pct,pct_public,pct_social,pct_personal,pct_intimate,patrol_ax,patrol_ay,patrol_bx,patrol_by
+3.9,235,1,1.2489,1.8179,0.7989,1.6357,7.625,7.0,1.089,0.4884,0.5001,1,42.6,57.0,43.0,0.0,0.0,1.5,5.0,8.5,5.0

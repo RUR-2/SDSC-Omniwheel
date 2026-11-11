@@ -60,12 +60,12 @@
         <div class="control-hint">
           <div class="key-grid">
             <div class="key-row">
-              <span></span><kbd>W</kbd><span></span>
+              <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd>
             </div>
             <div class="key-row">
               <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
             </div>
-            <p class="key-desc">Drive robot</p>
+            <p class="key-desc">WASD = drive · Q/E = rotate</p>
           </div>
           <ul class="hint-list">
             <li><kbd>Click</kbd> arena → place human</li>
@@ -83,10 +83,66 @@
             🕹️ Drive
           </button>
           <button class="toggle-btn" id="btnAuto" onclick="setMode('auto')">
-            🤖 Autonomous
+            🤖 Auto
+          </button>
+          <button class="toggle-btn" id="btnPatrol" onclick="setMode('patrol')">
+            🔁 Loop A↔B
           </button>
         </div>
         <p class="mode-desc" id="modeDesc">Keyboard drives the robot. SFM modulates velocity.</p>
+
+        <!-- Patrol A <-> B options (shown when Loop A<->B mode is active) -->
+        <div class="patrol-panel" id="patrolPanel" style="display:none">
+          <div class="patrol-status-row">
+            <span class="patrol-badge" id="patrolTargetBadge">Heading → B</span>
+            <span class="patrol-loops" id="patrolLoopCount">Loops: 0</span>
+          </div>
+          <div class="patrol-points">
+            <div class="patrol-pt-row">
+              <span class="pt-tag pt-a">A</span>
+              <span class="pt-coords" id="patrolACoords">(1.5, 5.0)</span>
+              <button class="btn-xs" id="btnPickA" onclick="startPickPatrol('A')" title="Click arena to set Point A">📍 Set A</button>
+            </div>
+            <div class="patrol-pt-row">
+              <span class="pt-tag pt-b">B</span>
+              <span class="pt-coords" id="patrolBCoords">(8.5, 5.0)</span>
+              <button class="btn-xs" id="btnPickB" onclick="startPickPatrol('B')" title="Click arena to set Point B">📍 Set B</button>
+            </div>
+          </div>
+          <p class="slider-section" style="margin-top:8px">— Route Presets —</p>
+          <div class="toggle-group" style="margin-top:4px;margin-bottom:4px">
+            <button class="toggle-btn" onclick="setPatrolPreset('horiz')" title="Horizontal loop">↔ Horiz</button>
+            <button class="toggle-btn" onclick="setPatrolPreset('vert')" title="Vertical loop">↕ Vert</button>
+            <button class="toggle-btn" onclick="setPatrolPreset('diag')" title="Diagonal loop">⤡ Diag</button>
+          </div>
+          <p class="rec-hint" style="margin-bottom:0;text-align:center">Drag markers A / B on arena, or click to set A then B</p>
+        </div>
+
+        <!-- Camera / Sensor FOV toggle -->
+        <p class="slider-section" style="margin-top:10px">— Vision Sensor (FOV) —</p>
+        <div class="toggle-group" id="fovGroup" style="margin-top:4px;margin-bottom:6px">
+          <button class="toggle-btn active" id="btnFov360" onclick="setFovEnabled(false)">
+            🌐 360° Full
+          </button>
+          <button class="toggle-btn" id="btnFov87" onclick="setFovEnabled(true)">
+            📷 87° · 8 m
+          </button>
+        </div>
+        <div class="fov-panel" id="fovPanel" style="display:none">
+          <div class="patrol-status-row" style="margin-bottom:6px">
+            <span class="fov-badge">FOV: 87° · Max: 8.0 m</span>
+            <span class="patrol-loops" id="fovVisCount">Visible: 0/0</span>
+          </div>
+          <div class="toggle-group" style="margin-bottom:4px">
+            <button class="toggle-btn active" id="btnFovAutoFace" onclick="setFovAutoFace(true)" title="Robot automatically rotates to face movement direction">
+              🧭 Auto-Face
+            </button>
+            <button class="toggle-btn" id="btnFovLockHeading" onclick="setFovAutoFace(false)" title="Keep heading fixed unless rotated with Q / E">
+              🔒 Lock (Q/E)
+            </button>
+          </div>
+          <p class="rec-hint" style="margin-bottom:0;text-align:center">Only humans inside the 87° front cone (≤ 8 m) are detected</p>
+        </div>
       </section>
 
       <!-- ── Human Motion Panel ─────────────────────────────── -->
@@ -264,11 +320,32 @@
       <!-- ── Recording Panel ─────────────────────────────── -->
       <section class="panel panel-record">
         <h2 class="panel-title">
-          <span class="panel-icon">⏺</span> Data Recording
+          <span class="panel-icon">⏺</span> Data Collector
         </h2>
-        <p class="rec-hint">Capture telemetry to CSV for offline analysis (like BroneX plots).</p>
+        <p class="rec-hint">Capture telemetry to CSV for offline analysis (BroneX / Matplotlib plots).</p>
 
-        <button class="btn-rec" id="recBtn" onclick="toggleRecording()">⏺ Record</button>
+        <!-- Scenario Preset: Stationary Human in Center of A<->B -->
+        <div class="scenario-box">
+          <p class="slider-section" style="margin-top:0">— Skenario Uji —</p>
+          <button class="btn-scenario" onclick="setupCenterHumanScenario()" title="Set Loop A(1.5,5) ↔ B(8.5,5), H1 diam di tengah (5.0,5.0), FOV 87°/8m">
+            🧍 Set Skenario: H1 Diam di Tengah (A↔B)
+          </button>
+          <label class="slider-label" style="margin-top:6px;margin-bottom:4px">
+            <span>Auto-stop target</span>
+            <select id="recAutoStop" class="rec-select" onchange="setRecAutoStop(this.value)">
+              <option value="0">Manual Stop</option>
+              <option value="0.5">0.5 Loop (A → B)</option>
+              <option value="1" selected>1 Loop (A → B → A)</option>
+              <option value="2">2 Loops (A ↔ B × 2)</option>
+              <option value="3">3 Loops (A ↔ B × 3)</option>
+            </select>
+          </label>
+          <button class="btn-scenario-rec" id="scenRecBtn" onclick="startScenarioRecording()" title="Setup skenario dari titik A, mulai rekam otomatis, dan export CSV saat loop selesai">
+            🎬 Setup &amp; Record Skenario
+          </button>
+        </div>
+
+        <button class="btn-rec" id="recBtn" onclick="toggleRecording()">⏺ Record Manual</button>
 
         <!-- Live status bar (hidden when not recording) -->
         <div class="rec-status" id="recStatus" style="display:none">
@@ -280,19 +357,23 @@
 
         <!-- CSV columns accordion -->
         <details class="rec-details">
-          <summary class="rec-summary">Recorded columns (18)</summary>
+          <summary class="rec-summary">Recorded columns (Scenario + Telemetry)</summary>
           <ul class="rec-cols">
             <li><span class="col-tag mono">time_s</span> Simulation time (s)</li>
             <li><span class="col-tag mono">robot_x / y</span> World position (m)</li>
             <li><span class="col-tag mono">robot_vx / vy</span> World velocity (m/s)</li>
             <li><span class="col-tag mono">robot_angle_deg</span> Heading (°)</li>
-            <li><span class="col-tag mono">closest_dist_m</span> Nearest human (m)</li>
+            <li><span class="col-tag mono">closest_dist_m</span> Detected dist in FOV (m)</li>
+            <li><span class="col-tag mono">actual_dist_m</span> True physical dist (m)</li>
+            <li><span class="col-tag mono">lateral_dev_m</span> Cross-track offset A↔B (m)</li>
+            <li><span class="col-tag mono">patrol_target / loop</span> Active goal (A/B) &amp; loop #</li>
+            <li><span class="col-tag mono">fov_enabled / vis</span> FOV 87° state &amp; visible H</li>
             <li><span class="col-tag mono">zone</span> INTIMATE/PERSONAL/…</li>
             <li><span class="col-tag mono">fx_pa / fy_pa</span> F_pa avoidance (N)</li>
             <li><span class="col-tag mono">fx_sr / fy_sr</span> F_sr social rule (N)</li>
             <li><span class="col-tag mono">fx_sim / fy_sim</span> f_SIM total (N)</li>
             <li><span class="col-tag mono">pkt_X / Y / W</span> ESP32 packet (0-255)</li>
-            <li><span class="col-tag mono">num_humans</span> Active humans</li>
+            <li><span class="col-tag mono">h1..h6_x/y/vis</span> Human pos, angle &amp; FOV vis</li>
           </ul>
         </details>
       </section>
